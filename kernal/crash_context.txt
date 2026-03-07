@@ -1,0 +1,41 @@
+  1014da:	e8 91 22 00 00       	call   103770 <vga_set_color>
+  1014df:	e8 5c 32 00 00       	call   104740 <sched_uptime_ms>
+  1014e4:	5a                   	pop    %edx
+  1014e5:	59                   	pop    %ecx
+  1014e6:	50                   	push   %eax
+  1014e7:	68 80 55 10 00       	push   $0x105580
+  1014ec:	e8 ff 24 00 00       	call   1039f0 <vga_printf>
+  1014f1:	5b                   	pop    %ebx
+  1014f2:	5e                   	pop    %esi
+  1014f3:	6a 00                	push   $0x0
+  1014f5:	6a 07                	push   $0x7
+  1014f7:	e8 74 22 00 00       	call   103770 <vga_set_color>
+  1014fc:	58                   	pop    %eax
+  1014fd:	5a                   	pop    %edx
+  1014fe:	68 a4 55 10 00       	push   $0x1055a4
+  101503:	6a 01                	push   $0x1
+  101505:	e8 d6 29 00 00       	call   103ee0 <klog>
+  10150a:	e8 71 32 00 00       	call   104780 <sched_dump>
+  10150f:	fb                   	sti
+  101510:	83 c4 10             	add    $0x10,%esp
+  101513:	2e 8d 74 26 00       	lea    %cs:0x0(%esi,%eiz,1),%esi
+  101518:	f4                   	hlt
+  101519:	eb fd                	jmp    101518 <cmain+0x288>
+  10151b:	83 ec 0c             	sub    $0xc,%esp
+  10151e:	68 e7 50 10 00       	push   $0x1050e7
+  101523:	e8 a8 13 00 00       	call   1028d0 <kpanic>
+  101528:	83 ec 0c             	sub    $0xc,%esp
+  10152b:	8b 44 24 20          	mov    0x20(%esp),%eax
+  10152f:	0f b6 40 6c          	movzbl 0x6c(%eax),%eax
+  101533:	50                   	push   %eax
+  101534:	8b 44 24 24          	mov    0x24(%esp),%eax
+  101538:	ff 70 68             	push   0x68(%eax)
+  10153b:	8b 44 24 28          	mov    0x28(%esp),%eax
+  10153f:	ff 70 64             	push   0x64(%eax)
+  101542:	68 38 51 10 00       	push   $0x105138
+  101547:	6a 01                	push   $0x1
+  101549:	e8 92 29 00 00       	call   103ee0 <klog>
+  10154e:	83 c4 20             	add    $0x20,%esp
+  101551:	e9 3e ff ff ff       	jmp    101494 <cmain+0x204>
+  101556:	66 90                	xchg   %ax,%ax
+  101558:	66 90                	xchg   %ax,%ax
