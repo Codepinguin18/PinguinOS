@@ -115,7 +115,7 @@ void idt_init(void)
 #undef SET_EXC
 
     /* IRQ-Gates installieren */
-#define SET_IRQ(n) idt_set_gate((n)+IRQ_BASE, (uint32_t)isr##n, GDT_KERNEL_CODE, kgate)
+#define SET_IRQ(n) idt_set_gate(n, (uint32_t)isr##n, GDT_KERNEL_CODE, kgate)
     SET_IRQ(32); SET_IRQ(33); SET_IRQ(34); SET_IRQ(35);
     SET_IRQ(36); SET_IRQ(37); SET_IRQ(38); SET_IRQ(39);
     SET_IRQ(40); SET_IRQ(41); SET_IRQ(42); SET_IRQ(43);

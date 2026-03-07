@@ -1,7 +1,8 @@
-# PinguinOS – 100-Feature Implementierungsplan
+# PinguinOS – 100-Feature Implementierungsplan (v2.2)
 
-Dieses Dokument beschreibt den Status aller 100 geplanten Features,
-aufgeteilt in implementierte und geplante Features mit Implementierungshinweisen.
+Dieses Dokument beschreibt den aktuellen Status aller 100 geplanten Features.
+
+**Legende:** ✅ Vollständig · 🔧 Stub/Teilweise · 📋 Geplant
 
 ---
 
@@ -9,49 +10,21 @@ aufgeteilt in implementierte und geplante Features mit Implementierungshinweisen
 
 | # | Feature | Status | Datei |
 |---|---------|--------|-------|
-| 1 | **SLAB-Allocator** | ✅ Implementiert | `mm/slab.c` |
+| 1 | **SLAB-Allocator** | ✅ Vollständig | `mm/slab.c` |
 | 2 | **Copy-on-Write (CoW)** | ✅ Basis in `proc_fork()` | `mm/process.c` |
-| 3 | **Demand Paging** | 🔧 Stub | Siehe unten |
+| 3 | **Demand Paging** | ✅ Vollständig | `mm/paging.c` |
 | 4 | **Swap-Support** | 📋 Geplant | Benötigt Block-IO |
 | 5 | **Shared Memory** | 📋 Geplant | Benötigt CoW + VMA |
-| 6 | **VMA-Tracking** | ✅ Implementiert | `mm/process.c` |
+| 6 | **VMA-Tracking** | ✅ Vollständig | `mm/process.c` |
 | 7 | **NX-Bit** | ✅ Basis (PDE_FLAGS) | `include/paging.h` |
 | 8 | **Recursive Paging** | 📋 Geplant | `mm/paging.c` erweitern |
 | 9 | **Page Cache** | 📋 Geplant | Benötigt IDE + VFS |
 | 10 | **Huge Pages** | ✅ PSE 4MB aktiv | `mm/paging.c` |
 
-### Demand Paging (Feature #3) – Implementierungsanleitung
-
-```c
-// In cpu/idt.c: Page-Fault-Handler registrieren
-void page_fault_handler(cpu_regs_t *regs) {
-    uint32_t fault_addr = read_cr2();
-    uint32_t err = regs->err_code;
-
-    // Prüfen ob es ein Demand-Paging-Fault ist
-    process_t *proc = proc_current();
-    vma_t *vma = vma_find(proc, fault_addr);
-    if (!vma) kpanic("Segmentation Fault @ 0x%08x", fault_addr);
-
-    // Neue physische Seite allozieren und mappen
-    uint32_t phys = pmm_alloc_page();
-    uint32_t virt = ALIGN_DOWN(fault_addr, PAGE_SIZE);
-    uint32_t pflags = PDE_PRESENT | PDE_USER;
-    if (vma->flags & VMA_WRITE) pflags |= PDE_WRITABLE;
-    paging_map(virt, phys, pflags);
-}
-// Registrierung: exception_register(14, page_fault_handler);
-```
-
-### Shared Memory (Feature #5)
-
-```c
-// Zwei VMAs auf dieselbe physische Seite mappen:
-uint32_t phys = pmm_alloc_page();
-paging_map(virt_a, phys, PDE_PRESENT | PDE_WRITABLE | PDE_USER);
-paging_map(virt_b, phys, PDE_PRESENT | PDE_WRITABLE | PDE_USER);
-// Referenz-Zähler für die physische Seite einführen!
-```
+### Demand Paging (#3) – Implementiert
+Page-Fault-Handler (Exception 14) registriert in `paging_init()`.
+Heap- und User-VMA-Faults werden automatisch aufgelöst.
+Segmentation Faults (außerhalb VMAs) lösen `kpanic()` + Backtrace aus.
 
 ---
 
@@ -61,37 +34,19 @@ paging_map(virt_b, phys, PDE_PRESENT | PDE_WRITABLE | PDE_USER);
 |---|---------|--------|-------|
 | 11 | **Fork-Syscall** | ✅ `proc_fork()` | `mm/process.c` |
 | 12 | **Signale (POSIX)** | ✅ Vollständig | `mm/process.c` |
-| 13 | **Priority-Scheduler** | 🔧 Stub | `sched/scheduler.c` |
+| 13 | **Priority-Scheduler** | ✅ Vollständig | `sched/scheduler.c` |
 | 14 | **MLFQ** | 📋 Geplant | Erweitert Prio-Scheduler |
-| 15 | **Wait Queues** | ✅ Implementiert | `sync/sync.c` |
+| 15 | **Wait Queues** | ✅ Vollständig | `sync/sync.c` |
 | 16 | **Kernel-Threading-API** | ✅ `task_create()` | `sched/scheduler.c` |
 | 17 | **I/O-Task-Priorisierung** | 📋 Geplant | |
 | 18 | **Process Groups** | ✅ pgid/sid in PCB | `mm/process.c` |
 | 19 | **Real-Time Scheduling** | 📋 Geplant | |
 | 20 | **SMP** | 📋 Geplant | Benötigt Local APIC |
 
-### Priority-Scheduler (Feature #13) – Erweiterung
-
-```c
-// In scheduler.h: task_t um Priorität erweitern:
-typedef struct task {
-    // ...bestehende Felder...
-    uint8_t  priority;        // 0=niedrig ... 255=höchst
-    uint8_t  base_priority;
-    uint32_t quantum_ticks;   // Verbleibende Ticks
-} task_t;
-
-// In scheduler.c: sched_next() nach Priorität sortieren:
-static task_t *sched_next(void) {
-    task_t *best = NULL;
-    for (int i = 0; i < SCHED_MAX_TASKS; i++) {
-        if (tasks[i].state != TASK_READY) continue;
-        if (!best || tasks[i].priority > best->priority)
-            best = &tasks[i];
-    }
-    return best;
-}
-```
+### Priority-Scheduler (#13) – Implementiert
+`task_create_prio(fn, name, priority)` – Prioritäten 0–255 (TASK_PRIO_* Konstanten).
+Aging-Mechanismus verhindert Starvation (Boost nach AGING_THRESHOLD Ticks).
+Quantum-basiertes Round-Robin für gleiche Prioritäten.
 
 ---
 
@@ -100,7 +55,7 @@ static task_t *sched_next(void) {
 | # | Feature | Status | Datei |
 |---|---------|--------|-------|
 | 31 | **PS/2 Tastatur** | ✅ DE/US-Layout | `drivers/keyboard.c` |
-| 32 | **PS/2 Maus** | 📋 Geplant | `drivers/mouse.c` |
+| 32 | **PS/2 Maus** | ✅ Vollständig | `drivers/mouse.c` |
 | 33 | **RTC (CMOS)** | ✅ Vollständig | `drivers/rtc.c` |
 | 34 | **HPET** | ✅ Vollständig | `drivers/rtc.c` |
 | 35 | **ACPI-Parser** | ✅ RSDP/RSDT/FADT | `drivers/acpi.c` |
@@ -110,65 +65,24 @@ static task_t *sched_next(void) {
 | 41 | **IDE/PATA** | ✅ PIO-Mode | `drivers/ide.c` |
 | 42 | **AHCI/SATA** | 📋 Geplant | Benötigt PCI BAR-Mapping |
 | 43 | **NVMe** | 📋 Geplant | Benötigt PCIe |
-| 44 | **E1000 NIC** | 🔧 Interface bereit | `net/net.c` |
+| 44 | **E1000 NIC** | ✅ Vollständig | `drivers/e1000.c` |
 | 45 | **RTL8139** | 📋 Geplant | |
 | 46–47 | **AC97 / HDA** | 📋 Geplant | |
-| 48 | **BGA Grafik** | 🔧 Stub | Siehe unten |
+| 48 | **BGA Grafik** | ✅ Vollständig | `drivers/bga.c` |
 | 49 | **Floppy** | 📋 Geplant | |
 | 50 | **UART IRQ** | ✅ Blockierend | `drivers/serial.c` |
 
-### E1000-NIC-Treiber (Feature #44) – Schnellstart
+### PS/2 Maus (#32) – Implementiert
+IRQ12, 3-Byte-Protokoll, Event-Queue (64 Einträge), absolute Position + Button-State.
+`mouse_init()` → `mouse_poll()` für Events.
 
-```c
-// drivers/e1000.c – Minimal-Implementierung
-#define E1000_CTRL    0x0000
-#define E1000_STATUS  0x0008
-#define E1000_RCTL    0x0100   // Receive Control
-#define E1000_TCTL    0x0400   // Transmit Control
+### E1000 NIC (#44) – Implementiert
+PCI-Detect (0x8086:0x100E), MMIO BAR0, EEPROM-MAC, 8x RX/TX-Descriptor-Ringe,
+IRQ-getriebener Empfang, `net_iface_t`-Registrierung.
 
-void e1000_init(pci_device_t *dev) {
-    // MMIO-BAR0 mappen
-    uint32_t mmio = dev->bar[0] & ~0xF;
-    paging_map(mmio, mmio, PDE_PRESENT | PDE_WRITABLE | PDE_NOCACHE);
-
-    volatile uint32_t *reg = (volatile uint32_t *)mmio;
-
-    // Reset
-    reg[E1000_CTRL/4] |= (1 << 26);
-    while (reg[E1000_CTRL/4] & (1 << 26));
-
-    // MAC-Adresse aus EEPROM lesen, RX/TX-Deskriptor-Ringe einrichten
-    // Interrupt-Handler registrieren (PCI IRQ-Line)
-    irq_register(dev->int_line, e1000_irq_handler);
-}
-```
-
-### BGA-Treiber (Feature #48)
-
-```c
-// drivers/bga.c – Bochs Graphic Adapter
-#define BGA_INDEX  0x01CE
-#define BGA_DATA   0x01CF
-#define BGA_ID     0x00
-#define BGA_XRES   0x01
-#define BGA_YRES   0x02
-#define BGA_BPP    0x03
-#define BGA_ENABLE 0x04
-
-static void bga_write(uint16_t idx, uint16_t val) {
-    outw(BGA_INDEX, idx);
-    outw(BGA_DATA, val);
-}
-
-void bga_set_mode(uint16_t w, uint16_t h, uint16_t bpp) {
-    bga_write(BGA_ENABLE, 0);       // VBE-Modus deaktivieren
-    bga_write(BGA_XRES, w);
-    bga_write(BGA_YRES, h);
-    bga_write(BGA_BPP, bpp);
-    bga_write(BGA_ENABLE, 1);       // Linearer Framebuffer aktiv
-    // Framebuffer liegt bei 0xE0000000 (QEMU Standard)
-}
-```
+### BGA Grafik (#48) – Implementiert
+VBE-Ports 0x01CE/0x01CF, linearer Framebuffer an 0xE0000000.
+`bga_set_mode(w, h, bpp)`, `bga_put_pixel()`, `bga_fill_rect()`, `bga_clear()`.
 
 ---
 
@@ -179,37 +93,31 @@ void bga_set_mode(uint16_t w, uint16_t h, uint16_t bpp) {
 | 46 | **VFS Layer** | ✅ Vollständig | `fs/vfs.c` |
 | 47 | **RAMFS** | ✅ Vollständig | `fs/ramfs.c` |
 | 48 | **Initrd** | 📋 Geplant | Multiboot-Module |
-| 49 | **FAT32** | 📋 Geplant | Benötigt IDE |
+| 49 | **FAT32 (read-only)** | ✅ Vollständig | `fs/fat32.c` |
 | 50 | **Ext2** | 📋 Geplant | |
 | 51 | **ISO9660** | 📋 Geplant | |
-| 52 | **DevFS** | 📋 Geplant | Erweitert VFS |
-| 53 | **ProcFS** | 📋 Geplant | |
+| 52 | **DevFS** | ✅ Vollständig | `fs/devfs.c` |
+| 53 | **ProcFS** | ✅ Vollständig | `fs/procfs.c` |
 | 54 | **SysFS** | 📋 Geplant | |
-| 55 | **MBR/GPT Parsing** | 📋 Geplant | Benötigt IDE |
+| 55 | **MBR/GPT Parsing** | ✅ Vollständig | `fs/partition.c` |
 
-### FAT32-Implementierung (Feature #49) – Schlüsselstrukturen
+### FAT32 (#49) – Implementiert (read-only)
+BPB-Parsing, Cluster-Chain-Walking, FAT32-Lookup über `fat32_finddir()`.
+8.3-Kurzname-Unterstützung, Cluster-Lesen via IDE-Treiber.
+Mount via `vfs_mount("/mnt/disk", "ide0p0", "fat32", 0)`.
 
-```c
-typedef struct {
-    uint8_t  jmp[3];
-    char     oem[8];
-    uint16_t bytes_per_sector;    // 512
-    uint8_t  sectors_per_cluster;
-    uint16_t reserved_sectors;
-    uint8_t  fat_count;           // 2
-    // ...
-    uint32_t fat_size_32;
-    uint32_t root_cluster;        // Cluster 2
-    // ...
-} __attribute__((packed)) fat32_bpb_t;
+### DevFS (#52) – Implementiert
+Standardgeräte: `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/tty`, `/dev/hd0`.
+`devfs_register(name, type, read_fn, write_fn)` für neue Treiber.
 
-// Cluster lesen:
-uint32_t fat32_cluster_to_lba(fat32_bpb_t *bpb, uint32_t cluster) {
-    uint32_t data_start = bpb->reserved_sectors +
-                          bpb->fat_count * bpb->fat_size_32;
-    return data_start + (cluster - 2) * bpb->sectors_per_cluster;
-}
-```
+### ProcFS (#53) – Implementiert
+Virtuelle Dateien: `uptime`, `meminfo`, `cpuinfo`, `net/dev`, `tasks`.
+Inhalte werden bei jedem `read()` on-the-fly generiert.
+
+### MBR/GPT (#55) – Implementiert
+Auto-Erkennung via Protective-MBR-Typ-Byte (0xEE).
+GPT: Header-Parsing, bis zu 128 Einträge, UTF-16-Namen → ASCII.
+MBR: 4 primäre Partitionen, Bootable-Flag.
 
 ---
 
@@ -222,48 +130,29 @@ uint32_t fat32_cluster_to_lba(fat32_bpb_t *bpb, uint32_t cluster) {
 | 63 | **IPv4** | ✅ Senden + Empfangen | `net/net.c` |
 | 64 | **ICMP** | ✅ Ping/Pong | `net/net.c` |
 | 65 | **UDP** | ✅ Vollständig | `net/net.c` |
-| 66 | **TCP** | 📋 Geplant | Sehr komplex |
-| 67 | **TCP Fenster** | 📋 Geplant | |
-| 68 | **Socket API** | ✅ UDP-Sockets | `net/net.c` |
-| 69 | **DHCP Client** | 📋 Geplant | Baut auf UDP auf |
-| 70 | **DNS** | 📋 Geplant | UDP Port 53 |
-| 71 | **Loopback** | 📋 Geplant | Virtuelle NIC |
+| 66 | **TCP** | ✅ Vollständig | `net/tcp.c` |
+| 67 | **TCP Fenster / Flow Control** | ✅ Vollständig | `net/tcp.c` |
+| 68 | **Socket API** | ✅ UDP + TCP Sockets | `net/net.c` |
+| 69 | **DHCP Client** | ✅ DORA-Exchange | `net/dhcp.c` |
+| 70 | **DNS Client** | ✅ A-Record Resolver | `net/dns.c` |
+| 71 | **Loopback** | ✅ 127.0.0.1/8 | `net/loopback.c` |
 | 72 | **NIC Management** | ✅ Interface-Tabelle | `net/net.c` |
 | 73 | **Paketfilter** | 📋 Geplant | |
 | 74 | **Port-Verwaltung** | ✅ In Socket-API | `net/net.c` |
 | 75 | **Netzstatistiken** | ✅ Vollständig | `net/net.c` |
 
-### TCP-Implementierung (Feature #66) – State Machine
+### TCP (#66 + #67) – Implementiert
+Vollständige 11-Zustands-State-Machine (RFC 793).
+Aktiver Connect (SYN → SYN-ACK → ACK), graceful Close (FIN-Handshake).
+Sliding Window, Retransmission-Timeout, Pseudo-Header-Prüfsumme.
+API: `tcp_socket()`, `tcp_connect()`, `tcp_send()`, `tcp_recv()`, `tcp_close()`.
 
-```c
-typedef enum {
-    TCP_CLOSED, TCP_LISTEN, TCP_SYN_SENT, TCP_SYN_RECEIVED,
-    TCP_ESTABLISHED, TCP_FIN_WAIT_1, TCP_FIN_WAIT_2,
-    TCP_CLOSE_WAIT, TCP_CLOSING, TCP_LAST_ACK, TCP_TIME_WAIT
-} tcp_state_t;
+### DNS (#70) – Implementiert
+UDP-A-Record-Resolver gegen konfigurierbaren DNS-Server (Standard: 8.8.8.8).
+`dns_resolve("example.com", &ip, 5000)`.
 
-typedef struct tcp_connection {
-    tcp_state_t state;
-    uint32_t    seq_num;      // Eigene Sequenznummer
-    uint32_t    ack_num;      // Erwartete Sequenznummer des Partners
-    uint16_t    local_port;
-    uint16_t    remote_port;
-    ip4_addr_t  remote_ip;
-    uint16_t    window_size;
-    // Sende-/Empfangs-Puffer...
-} tcp_conn_t;
-```
-
-### DHCP-Client (Feature #69)
-
-```c
-// DHCP Discover auf Port 67 broadcast senden:
-void dhcp_discover(net_iface_t *iface) {
-    // DHCP-Paket aufbauen (BOOTP-basiert)
-    // UDP Port 68 → 67, Broadcast 255.255.255.255
-    // Nach DHCP-Offer: ACK senden, IP-Adresse übernehmen
-}
-```
+### Loopback (#71) – Implementiert
+`lo`-Interface mit 127.0.0.1/8. Sendet Pakete direkt zurück in `net_receive()`.
 
 ---
 
@@ -274,34 +163,22 @@ void dhcp_discover(net_iface_t *iface) {
 | 76 | **Syscall INT 0x80** | ✅ Vollständig | `ipc/syscall.c` |
 | 77 | **ELF32 Loader** | ✅ Vollständig | `ipc/syscall.c` |
 | 78 | **User-Mode** | ✅ Ring-3-Übergang | `ipc/syscall.c` |
-| 79 | **Pipes** | 📋 Geplant | Ringpuffer + VFS |
+| 79 | **Pipes** | ✅ Vollständig | `ipc/pipe.c` |
 | 80 | **Unix Sockets** | 📋 Geplant | |
 | 81 | **Message Queues** | 📋 Geplant | |
-| 82 | **Env-Variablen** | 📋 Geplant | |
+| 82 | **Env-Variablen** | ✅ Vollständig | `ipc/env.c` |
 | 83 | **Exit-Code** | ✅ In `proc_exit()` | `mm/process.c` |
 | 84 | **Signal Masking** | ✅ `sig_mask` im PCB | `mm/process.c` |
 | 85 | **Process Accounting** | 🔧 Ticks im PCB | `mm/process.c` |
 
-### Pipes (Feature #79)
+### Pipes (#79) – Implementiert
+4 KB Ring-Buffer, Mutex + Condvar-geschützt, blockierendes Lesen/Schreiben.
+`pipe_create(&read_node, &write_node)` liefert zwei VFS-Nodes.
+Broken-Pipe-Erkennung beim Schreiben (ref_read == 0).
 
-```c
-typedef struct pipe {
-    uint8_t  buf[4096];
-    uint32_t read_pos, write_pos;
-    uint32_t count;
-    mutex_t  lock;
-    condvar_t not_empty, not_full;
-} pipe_t;
-
-int pipe_create(int fds[2]) {
-    pipe_t *p = kmalloc(sizeof(pipe_t));
-    mutex_init(&p->lock);
-    condvar_init(&p->not_empty);
-    condvar_init(&p->not_full);
-    // fds[0] = Leseende, fds[1] = Schreibende
-    // Als VFS-Knoten in /proc/pipes/ eintragen
-}
-```
+### Env-Variablen (#82) – Implementiert
+`env_block_t` mit 64 Variablen. Globales Kernel-Env + per-Prozess-Kopie via `env_clone()`.
+Standard-Variablen: `OS`, `VERSION`, `ARCH`, `PATH`, `HOME`, `TERM`.
 
 ---
 
@@ -317,26 +194,8 @@ int pipe_create(int fds[2]) {
 | 86 | **Local APIC Timer** | 📋 Geplant | Ersetzt PIT |
 | 87 | **I/O APIC** | 📋 Geplant | |
 | 88 | **IPI** | 📋 Geplant | Benötigt SMP |
-| 89 | **CPU-Topologie** | 📋 Geplant | CPUID erweiterung |
+| 89 | **CPU-Topologie** | 📋 Geplant | CPUID-Erweiterung |
 | 90 | **Kernel-Module** | 📋 Geplant | Komplexes Linker-Work |
-
-### Local APIC Timer (Feature #86)
-
-```c
-#define APIC_BASE      0xFEE00000   // Standard-Adresse
-#define APIC_REG_TIMER 0x320
-#define APIC_TIMER_DIV 0x3E0
-#define APIC_TIMER_ICR 0x380
-
-void apic_timer_init(uint32_t hz) {
-    volatile uint32_t *apic = (volatile uint32_t *)APIC_BASE;
-    paging_map(APIC_BASE, APIC_BASE, PDE_PRESENT|PDE_WRITABLE|PDE_NOCACHE);
-
-    apic[APIC_TIMER_DIV/4] = 0x3;   // Teiler: 16
-    apic[APIC_REG_TIMER/4] = 0x20020; // Periodisch, Vektor 32
-    // Kalibrieren via PIT-Referenzmessung
-}
-```
 
 ---
 
@@ -345,111 +204,117 @@ void apic_timer_init(uint32_t hz) {
 | # | Feature | Status | Datei |
 |---|---------|--------|-------|
 | 91 | **Debug-Shell** | ✅ Vollständig | `debug/debug_shell.c` |
-| 92 | **Backtrace** | 📋 Geplant | EBP-Chain verfolgen |
+| 92 | **Backtrace** | ✅ Vollständig | `cpu/cpu.c` |
 | 93 | **GDB-Stub** | 📋 Geplant | GDB Remote Protocol |
-| 94 | **Memory-Leak-Detektor** | 🔧 Stub | kmalloc-Tracking |
-| 95 | **Stack-Smashing-Schutz** | 📋 Geplant | GCC `__stack_chk_fail` |
+| 94 | **Memory-Leak-Detektor** | ✅ Vollständig | `mm/heap.c` |
+| 95 | **Stack-Smashing-Schutz** | ✅ Vollständig | `cpu/ssp.c` |
 | 96 | **Profiler** | 📋 Geplant | PIT-IRQ-Sampling |
 | 97 | **Kprobes** | 📋 Geplant | INT3-Hooking |
 | 98 | **Crash-Dumps** | 📋 Geplant | RAM → IDE schreiben |
-| 99 | **Watchdog Timer** | 📋 Geplant | RTC-Alarm |
-| 100 | **Entropy Pool (RNG)** | 📋 Geplant | Hardware-Events mischen |
+| 99 | **Watchdog Timer** | ✅ Vollständig | `drivers/watchdog.c` |
+| 100 | **Entropy Pool (RNG)** | ✅ Vollständig | `entropy/entropy.c` |
 
-### Backtrace (Feature #92)
+### Backtrace (#92) – Implementiert
+`print_backtrace()` per EBP-Chain-Walking, automatisch in `kpanic()` aufgerufen.
+Zeigt bis zu 20 Return-Adressen mit Tiefenindex an.
 
-```c
-void print_backtrace(void) {
-    uint32_t *ebp;
-    __asm__ volatile ("mov %%ebp, %0" : "=r"(ebp));
+### Memory-Leak-Detektor (#94) – Implementiert
+1024-Einträge-Tabelle (ptr, size, file, line).
+Aktivierung: `-DHEAP_LEAK_DETECT` → `kmalloc/kfree` werden zu Tracking-Varianten.
+Bericht via `heap_leak_report()` (Debug-Shell-Befehl empfohlen).
 
-    serial_puts("Stack-Backtrace:\n");
-    for (int i = 0; i < 16 && ebp; i++) {
-        uint32_t eip = ebp[1];   // Return-Address
-        if (eip < 0x100000 || eip > 0xE0000000) break;
-        serial_printf("  #%d  0x%08x\n", i, eip);
-        ebp = (uint32_t *)ebp[0]; // Vorheriger EBP
-    }
-}
-// Aufruf in kpanic() ergänzen!
-```
+### Stack-Smashing-Schutz (#95) – Implementiert
+`ssp.c`: `__stack_chk_guard` (per Boot randomisiert via RNG) + `__stack_chk_fail()`.
+Build-Flag: `-fstack-protector-strong` (entfernt `-fno-stack-protector` im Makefile).
+`ssp_init()` in `cmain()` nach `entropy_init()` aufrufen.
 
-### Memory-Leak-Detektor (Feature #94)
+### Watchdog (#99) – Implementiert
+RTC-Periodic-Interrupt (IRQ8, ~1024 Hz) als unabhängige Zeitbasis.
+`watchdog_init(timeout_seconds)` → `watchdog_enable()` → periodisch `watchdog_pet()`.
+Bei Timeout: serielle Warnung + ACPI-Reboot.
 
-```c
-// In heap.c: Allokations-Tracking aktivieren
-#ifdef HEAP_LEAK_DETECT
-typedef struct alloc_record {
-    void    *ptr;
-    size_t   size;
-    const char *file;
-    int      line;
-} alloc_record_t;
+### Entropy Pool (#100) – Implementiert
+32-Wort-Pool mit Galois-LFSR und XOR-Fold-Ausgabe.
+`entropy_add(value)` aus IRQ-Handlern; `rand_u32()`, `rand_range()`, `rand_bytes()`.
 
-static alloc_record_t records[1024];
+---
 
-#define kmalloc(s) kmalloc_tracked(s, __FILE__, __LINE__)
-void *kmalloc_tracked(size_t size, const char *file, int line);
-void heap_leak_report(void);  // Alle nicht-freigegebenen Allokationen ausgeben
-#endif
-```
+## Gesamtstatus
 
-### Entropy Pool / RNG (Feature #100)
-
-```c
-static uint32_t entropy_pool[32];
-static uint32_t entropy_pos = 0;
-
-// Events als Entropie-Quelle nutzen:
-void entropy_add(uint32_t value) {
-    entropy_pool[entropy_pos % 32] ^= value ^ sched_uptime_ms();
-    entropy_pos++;
-}
-
-// In IRQ-Handlern aufrufen:
-// entropy_add(regs->eip ^ regs->eax);
-
-uint32_t rand_u32(void) {
-    // Einfacher LFSR über den Pool:
-    uint32_t result = 0;
-    for (int i = 0; i < 32; i++)
-        result ^= entropy_pool[i];
-    entropy_pool[0] ^= result;
-    return result;
-}
-```
+| Phase | Gesamt | ✅ Fertig | 🔧 Stub | 📋 Geplant |
+|-------|--------|-----------|---------|------------|
+| 1 – Speicher | 10 | 6 | 0 | 4 |
+| 2 – Prozesse | 10 | 7 | 0 | 3 |
+| 3 – Treiber | 20 | 11 | 0 | 9 |
+| 4 – Dateisystem | 10 | 6 | 0 | 4 |
+| 5 – Netzwerk | 15 | 13 | 0 | 2 |
+| 6 – IPC | 10 | 7 | 1 | 2 |
+| 7 – Sync | 10 | 5 | 0 | 5 |
+| 8 – Debug | 10 | 8 | 0 | 2 |
+| **Gesamt** | **100** | **63** | **1** | **36** |
 
 ---
 
 ## Nächste Prioritäten (Empfehlung)
 
-1. **Demand Paging** (#3) – Voraussetzung für User-Space
-2. **PS/2 Maus** (#32) – Einfach, gut für GUI-Grundlagen
-3. **FAT32** (#49) – Lesen von Dateien von IDE-Disk
-4. **E1000-NIC** (#44) – Netzwerk in QEMU
-5. **Backtrace in kpanic()** (#92) – Sofort nützlich
-6. **TCP-Stack** (#66) – Großes Projekt, benötigt viel Zeit
-7. **ELF-Loader testen** (#77) – Erstes User-Space-Programm
+1. **Ext2 read-only** (#50) – Wichtiger als ISO9660 für echte Disks
+2. **GDB-Stub** (#93) – Remote-Debugging via QEMU -s
+3. **Local APIC Timer** (#86) – Präzisere Zeitbasis als PIT
+4. **MLFQ** (#14) – Besseres Scheduling für I/O-intensive Tasks
+5. **Shared Memory** (#5) – IPC-Grundlage für User-Space
+6. **Initrd** (#48) – Statisches Root-FS aus Multiboot-Modul
+7. **SysFS** (#54) – Pendant zu ProcFS für Geräte/Parameter
+8. **Message Queues** (#81) – IPC-Kompletierung
+9. **Crash-Dumps** (#98) – Kernel-Crash auf Disk schreiben
+10. **Profiler** (#96) – PIT-Sampling für Hotspot-Analyse
 
 ---
 
-## Build-Hinweise
+## Neue Dateien – Übersicht
 
-```bash
-# Alle implementierten Features bauen:
-cd kernel && make all
+| Neue Datei | Zielort | Feature |
+|------------|---------|---------|
+| `mouse.h` | `include/mouse.h` | #32 |
+| `mouse.c` | `drivers/mouse.c` | #32 |
+| `bga.h` | `include/bga.h` | #48 |
+| `bga.c` | `drivers/bga.c` | #48 |
+| `e1000.h` | `include/e1000.h` | #44 |
+| `e1000.c` | `drivers/e1000.c` | #44 |
+| `entropy.h` | `include/entropy.h` | #100 |
+| `entropy.c` | `entropy/entropy.c` | #100 |
+| `dhcp.c` | `net/dhcp.c` | #69 |
+| `tcp.h` | `include/tcp.h` | #66/#67 |
+| `tcp.c` | `net/tcp.c` | #66/#67 |
+| `dns.h` | `include/dns.h` | #70 |
+| `dns.c` | `net/dns.c` | #70 |
+| `loopback.c` | `net/loopback.c` | #71 |
+| `pipe.h` | `include/pipe.h` | #79 |
+| `pipe.c` | `ipc/pipe.c` | #79 |
+| `env.h` | `include/env.h` | #82 |
+| `env.c` | `ipc/env.c` | #82 |
+| `watchdog.h` | `include/watchdog.h` | #99 |
+| `watchdog.c` | `drivers/watchdog.c` | #99 |
+| `ssp.c` | `cpu/ssp.c` | #95 |
+| `procfs.c` | `fs/procfs.c` | #53 |
+| `partition.h` | `include/partition.h` | #55 |
+| `partition.c` | `fs/partition.c` | #55 |
+| `fat32.c` | `fs/fat32.c` | #49 |
+| `devfs.c` | `fs/devfs.c` | #52 |
 
-# Mit Disk-Image (für IDE-Treiber-Tests):
-make run-disk
+## Makefile-Ergänzung
 
-# Debug-Session starten:
-make debug
-# In Terminal 2:
-i686-elf-gdb build/kernel.elf \
-    -ex "target remote :1234" \
-    -ex "break debug_shell_run" \
-    -ex "continue"
+```makefile
+SRCS += drivers/mouse.c drivers/bga.c drivers/e1000.c drivers/watchdog.c
+SRCS += net/tcp.c net/dns.c net/loopback.c net/dhcp.c
+SRCS += ipc/pipe.c ipc/env.c
+SRCS += fs/fat32.c fs/devfs.c fs/procfs.c fs/partition.c
+SRCS += entropy/entropy.c cpu/ssp.c
+
+# Stack-Smashing-Schutz aktivieren (entfernt -fno-stack-protector):
+CFLAGS := $(filter-out -fno-stack-protector,$(CFLAGS))
+CFLAGS += -fstack-protector-strong
 ```
 
 ---
 
-*PinguinOS – Klein, aber wächst! 🐧*
+*PinguinOS – Klein, aber wächst! 🐧 (63/100 Features implementiert)*

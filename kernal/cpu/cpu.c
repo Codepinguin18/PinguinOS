@@ -1,6 +1,10 @@
 /**
  * @file cpu.c
  * @brief CPU identification and kernel panic implementation.
+ *
+ * Feature #92 – Backtrace:
+ *   kpanic() now walks the EBP chain and prints the call stack to both
+ *   VGA and the serial console.
  */
 
 #include "../include/cpu.h"
@@ -14,10 +18,6 @@ static cpu_info_t cpu_info;
 /* ── Helper: does CPUID exist? ───────────────────────────────────── */
 static bool cpuid_supported(void)
 {
-    /*
-     * CPUID is available iff the ID flag (bit 21) in EFLAGS can be
-     * flipped.  486 and earlier CPUs do not have CPUID.
-     */
     uint32_t before, after;
     __asm__ volatile (
         "pushf\n\t"
@@ -48,23 +48,19 @@ void cpu_init(void)
 
     uint32_t eax, ebx, ecx, edx;
 
-    /* Leaf 0: vendor string */
     cpuid(CPUID_VENDOR, &eax, &ebx, &ecx, &edx);
-    /* The vendor string is packed in EBX, EDX, ECX (in that order) */
     memcpy(cpu_info.vendor + 0, &ebx, 4);
     memcpy(cpu_info.vendor + 4, &edx, 4);
     memcpy(cpu_info.vendor + 8, &ecx, 4);
     cpu_info.vendor[12] = '\0';
 
-    /* Leaf 1: family/model/stepping + feature flags */
     cpuid(CPUID_FEATURES, &eax, &ebx, &ecx, &edx);
-    cpu_info.stepping      = eax & 0xF;
-    cpu_info.model         = (eax >> 4)  & 0xF;
-    cpu_info.family        = (eax >> 8)  & 0xF;
-    cpu_info.features_edx  = edx;
-    cpu_info.features_ecx  = ecx;
+    cpu_info.stepping     = eax & 0xF;
+    cpu_info.model        = (eax >> 4)  & 0xF;
+    cpu_info.family       = (eax >> 8)  & 0xF;
+    cpu_info.features_edx = edx;
+    cpu_info.features_ecx = ecx;
 
-    /* Extended leaves: brand string (if available) */
     cpuid(0x80000000, &eax, &ebx, &ecx, &edx);
     if (eax >= CPUID_BRAND3) {
         uint32_t brand[12];
@@ -92,12 +88,55 @@ void cpu_dump(void)
           cpu_info.features_edx, cpu_info.features_ecx);
 }
 
+/* ── Feature #92: Stack Backtrace ────────────────────────────────── */
+/**
+ * @brief Walk the EBP chain and print return addresses.
+ *
+ * The frame layout on x86 with -fno-omit-frame-pointer is:
+ *
+ *   [EBP+0]  = previous EBP
+ *   [EBP+4]  = return address (EIP of the caller)
+ *
+ * We stop when EBP is NULL, misaligned, or the EIP looks implausible
+ * (i.e. below 0x100000 or above 0xE0000000).
+ */
+void print_backtrace(void)
+{
+    uint32_t *ebp;
+    __asm__ volatile ("mov %%ebp, %0" : "=r"(ebp));
+
+    serial_puts("[BACKTRACE] Stack trace:\n");
+    vga_puts("[BACKTRACE]\n");
+
+    char linebuf[64];
+
+    for (int depth = 0; depth < 20; depth++) {
+        /* Sanity-check EBP */
+        if (!ebp) break;
+        if ((uint32_t)ebp < 0x1000 || (uint32_t)ebp > 0xEFFFFFFC) break;
+        if ((uint32_t)ebp & 3) break;   /* Must be 4-byte aligned */
+
+        uint32_t ret_eip = ebp[1];
+
+        /* Check return address plausibility */
+        if (ret_eip < 0x100000 || ret_eip > 0xE0000000) break;
+
+        snprintf(linebuf, sizeof(linebuf),
+                 "  #%-2d  0x%08x\n", depth, ret_eip);
+        serial_puts(linebuf);
+        vga_puts(linebuf);
+
+        ebp = (uint32_t *)ebp[0];
+    }
+
+    serial_puts("[BACKTRACE] End\n");
+}
+
 /* ── Public: kpanic ──────────────────────────────────────────────── */
 void kpanic(const char *fmt, ...)
 {
     cli();   /* Disable interrupts – we are done */
 
-    /* Print to both VGA (visible on screen) and serial (QEMU log) */
     vga_set_color(VGA_WHITE, VGA_RED);
     vga_puts("\n\n  *** KERNEL PANIC ***\n  ");
 
@@ -112,6 +151,8 @@ void kpanic(const char *fmt, ...)
     serial_puts(buf);
     serial_puts("\n");
 
-    /* Halt forever */
+    /* Feature #92 – Print backtrace on every panic */
+    print_backtrace();
+
     for (;;) hlt();
 }

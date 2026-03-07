@@ -19,16 +19,17 @@ CFLAGS  = -m32 -std=c11 -ffreestanding -fno-stack-protector \
 ASFLAGS = -m32 -c
 LDFLAGS = -m elf_i386 -T linker.ld --no-undefined -z noexecstack
 
-C_SRCS = kernel.c klib.c \
-    cpu/gdt.c cpu/idt.c cpu/cpu.c \
+C_SRCS = kernel.c klib.c entropy.c \
+    cpu/gdt.c cpu/idt.c cpu/cpu.c cpu/ssp.c \
     mm/phys_alloc.c mm/paging.c mm/heap.c mm/slab.c mm/process.c \
     drivers/vga.c drivers/serial.c drivers/pci.c drivers/keyboard.c \
-    drivers/rtc.c drivers/acpi.c drivers/ide.c \
+    drivers/rtc.c drivers/acpi.c drivers/ide.c drivers/bga.c \
+    drivers/mouse.c drivers/watchdog.c drivers/e1000.c \
     sched/scheduler.c \
     sync/sync.c \
-    fs/vfs.c fs/ramfs.c \
-    net/net.c \
-    ipc/syscall.c \
+    fs/vfs.c fs/ramfs.c fs/devfs.c fs/fat32.c fs/partition.c fs/procfs.c \
+    net/net.c net/dhcp.c net/dns.c net/loopback.c net/tcp.c \
+    ipc/syscall.c ipc/env.c ipc/pipe.c \
     debug/debug_shell.c
 
 ASM_SRCS = boot.S cpu/isr.S

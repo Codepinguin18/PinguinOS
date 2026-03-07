@@ -60,6 +60,12 @@ int net_register_iface(net_iface_t *iface)
     return 0;
 }
 
+net_iface_t *net_get_primary(void)
+{
+    if (iface_count > 0) return ifaces[0];
+    return NULL;
+}
+
 /* ══════════════════════════════════════════════════════════════════
  *  ARP – Features #62
  * ══════════════════════════════════════════════════════════════════ */

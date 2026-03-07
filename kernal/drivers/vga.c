@@ -1,18 +1,18 @@
 /**
  * @file vga.c
- * @brief VGA text-mode driver + linear framebuffer support for PinguinOS.
+ * @brief VGA-Textmodus-Treiber + Linear Framebuffer Unterstützung für PinguinOS.
  */
 
 #include "../include/vga.h"
 #include "../include/cpu.h"
 #include "../include/klib.h"
 
-/* ── Text-mode state ─────────────────────────────────────────────── */
+/* ── Textmodus-Zustand ───────────────────────────────────────────── */
 static uint8_t  cur_col  = 0;
 static uint8_t  cur_row  = 0;
-static uint8_t  cur_attr;                 /* Current colour attribute */
+static uint8_t  cur_attr;                 /* Aktuelles Farbattribut */
 
-/* ── Framebuffer state ────────────────────────────────────────────── */
+/* ── Framebuffer-Zustand ─────────────────────────────────────────── */
 static uint32_t  fb_addr   = 0;
 static uint32_t  fb_pitch  = 0;
 static uint32_t  fb_width  = 0;
@@ -20,10 +20,10 @@ static uint32_t  fb_height = 0;
 static uint8_t   fb_bpp    = 0;
 static bool      fb_active = false;
 
-/* ── PSF1 8×8 bitmap font (only printable ASCII 32–127) ──────────── */
-/* This is a compact 8×8 font stored as 8 bytes per glyph.           */
+/* ── PSF1 8×8 Bitmap-Schriftart (nur druckbare ASCII 32–127) ─────── */
+/* Dies ist eine kompakte 8×8 Schriftart, gespeichert als 8 Bytes pro Glyphe. */
 static const uint8_t font8x8[96][8] = {
-    /* 0x20 space */ {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
+    /* 0x20 Leerzeichen */ {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
     /* 0x21 ! */     {0x18,0x18,0x18,0x18,0x00,0x00,0x18,0x00},
     /* 0x22 " */     {0x66,0x66,0x66,0x00,0x00,0x00,0x00,0x00},
     /* 0x23 # */     {0x36,0x36,0x7F,0x36,0x7F,0x36,0x36,0x00},
@@ -110,7 +110,7 @@ static const uint8_t font8x8[96][8] = {
     /* 0x74 t */     {0x08,0x0C,0x3E,0x0C,0x0C,0x2C,0x18,0x00},
     /* 0x75 u */     {0x00,0x00,0x33,0x33,0x33,0x33,0x6E,0x00},
     /* 0x76 v */     {0x00,0x00,0x33,0x33,0x33,0x1E,0x0C,0x00},
-    /* 0x77 w */     {0x00,0x00,0x63,0x6B,0x7F,0x7F,0x36,0x00},
+    /* 0x77 w */     {0x00,0x00,0x63,0x6B,0x7F,0x77,0x63,0x00},
     /* 0x78 x */     {0x00,0x00,0x63,0x36,0x1C,0x36,0x63,0x00},
     /* 0x79 y */     {0x00,0x00,0x33,0x33,0x33,0x3E,0x30,0x1F},
     /* 0x7A z */     {0x00,0x00,0x3F,0x19,0x0C,0x26,0x3F,0x00},
@@ -121,7 +121,7 @@ static const uint8_t font8x8[96][8] = {
     /* 0x7F DEL */   {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},
 };
 
-/* ── Text-mode helpers ───────────────────────────────────────────── */
+/* ── Textmodus-Helfer ───────────────────────────────────────────── */
 static void update_cursor(void)
 {
     uint16_t pos = (uint16_t)(cur_row * VGA_WIDTH + cur_col);
@@ -145,7 +145,7 @@ static void scroll(void)
     cur_row = VGA_HEIGHT - 1;
 }
 
-/* ── Public: text-mode API ───────────────────────────────────────── */
+/* ── Öffentlich: Textmodus-API ───────────────────────────────────── */
 void vga_init(void)
 {
     cur_attr = vga_make_attr(VGA_LIGHT_GREY, VGA_BLACK);
@@ -222,12 +222,12 @@ void vga_printf(const char *fmt, ...)
     vga_puts(buf);
 }
 
-/* ── Framebuffer implementation ──────────────────────────────────── */
+/* ── Framebuffer-Implementierung ─────────────────────────────────── */
 bool fb_init(multiboot_info_t *mbi)
 {
     if (!(mbi->flags & MULTIBOOT_INFO_FB)) return false;
-    if (mbi->framebuffer_type != 2) return false;   /* Must be RGB */
-    if (mbi->framebuffer_bpp  != 32) return false;  /* 32 bpp only  */
+    if (mbi->framebuffer_type != 2) return false;   /* Muss RGB sein */
+    if (mbi->framebuffer_bpp  != 32) return false;  /* Nur 32 bpp */
 
     fb_addr   = (uint32_t)mbi->framebuffer_addr;
     fb_pitch  = mbi->framebuffer_pitch;

@@ -48,6 +48,12 @@
     (((x) & 0x000000FF) << 24)))
 #define NTOHL(x) HTONL(x)
 
+/* Aliases for lowercase versions */
+#define htons(x) HTONS(x)
+#define ntohs(x) NTOHS(x)
+#define htonl(x) HTONL(x)
+#define ntohl(x) NTOHL(x)
+
 /* ── MAC-Adresse ─────────────────────────────────────────────────── */
 typedef struct { uint8_t b[ETH_ADDR_LEN]; } mac_addr_t;
 
@@ -163,6 +169,7 @@ typedef struct {
 /* Initialisierung */
 void net_init(void);
 int  net_register_iface(net_iface_t *iface);
+net_iface_t *net_get_primary(void);
 
 /* Empfang (wird vom NIC-Treiber aufgerufen) */
 void net_receive(net_iface_t *iface, const void *data, uint32_t len);

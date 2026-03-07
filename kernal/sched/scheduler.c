@@ -1,9 +1,16 @@
 /**
  * @file scheduler.c
- * @brief Round-robin preemptive scheduler for PinguinOS.
+ * @brief Prioritätsbasierter präemptiver Scheduler für PinguinOS.
  *
- * Context switches are driven by IRQ0 (PIT, ~100 Hz).
- * Each task has its own 8 KB kernel stack.
+ * Kontextwechsel werden durch IRQ0 (PIT, ~100 Hz) gesteuert.
+ * Jeder Task hat seinen eigenen 8 KB Kernel-Stack.
+ *
+ * Feature #13 – Prioritäts-Scheduling:
+ *   sched_next() wählt immer den bereitstehenden (READY) Task mit der höchsten Priorität.
+ *   Tasks gleicher Priorität teilen sich die CPU via Round-Robin (Zeitschlitz =
+ *   SCHED_QUANTUM_MS). Ein einfacher Aging-Mechanismus verhindert Verhungern (Starvation):
+ *   Tasks, die ≥ AGING_THRESHOLD Ticks gewartet haben, erhalten einen
+ *   Prioritäts-Boost um einen Tick.
  */
 
 #include "../include/scheduler.h"
@@ -15,62 +22,98 @@
 #include "../include/serial.h"
 #include "../include/klib.h"
 
-/* ── External context-switch assembly ───────────────────────────── */
+/* ── Externer Kontextwechsel (Assembly) ─────────────────────────── */
 extern void sched_switch_context(task_context_t *old_ctx, task_context_t *new_ctx);
 
-/* ── PIT configuration ───────────────────────────────────────────── */
-#define PIT_FREQ_HZ    100        /* Tick rate                       */
-#define PIT_BASE_FREQ  1193182   /* PIT input frequency in Hz        */
+/* ── PIT-Konfiguration ───────────────────────────────────────────── */
+#define PIT_FREQ_HZ    100        /* Tick-Rate                       */
+#define PIT_BASE_FREQ  1193182    /* PIT-Eingangsfrequenz in Hz      */
 #define PIT_CMD_PORT   0x43
 #define PIT_CH0_PORT   0x40
 
-/* ── Module state ────────────────────────────────────────────────── */
+/* Ticks ohne Ausführung, bevor die Priorität erhöht wird (+1, gedeckelt bei 254) */
+#define AGING_THRESHOLD  50
+
+/* Modulzustand */
 static task_t   tasks[SCHED_MAX_TASKS];
 static task_t  *current_task = NULL;
 static uint32_t next_id      = 1;
-static uint32_t uptime_ticks = 0;    /* Timer ticks since boot        */
+static uint32_t uptime_ticks = 0;
 
-/* ── PIT setup ───────────────────────────────────────────────────── */
+/* ── PIT-Einrichtung ─────────────────────────────────────────────── */
 static void pit_init(uint32_t hz)
 {
     uint32_t divisor = PIT_BASE_FREQ / hz;
-    outb(PIT_CMD_PORT, 0x36);                    /* Channel 0, lobyte/hibyte, mode 3 */
+    outb(PIT_CMD_PORT, 0x36);
     outb(PIT_CH0_PORT, (uint8_t)(divisor & 0xFF));
     outb(PIT_CH0_PORT, (uint8_t)((divisor >> 8) & 0xFF));
 }
 
-/* ── Find the next ready task ────────────────────────────────────── */
+/* ── Prioritäts-Scheduling: Besten nächsten Task finden ──────────── */
 static task_t *sched_next(void)
 {
-    /* Wake sleeping tasks that have expired */
     uint32_t now_ms = uptime_ticks * (1000 / PIT_FREQ_HZ);
+
+    /* 1. Schlafende Tasks aufwecken, deren Timer abgelaufen ist */
     for (int i = 0; i < SCHED_MAX_TASKS; i++) {
         task_t *t = &tasks[i];
         if (t->state == TASK_BLOCKED && t->sleep_until_ms <= now_ms)
             t->state = TASK_READY;
     }
 
-    /* Round-robin from the task after the current one */
-    int start = current_task ? (int)(current_task - tasks) : -1;
+    /* 2. Aging: Priorität von lange wartenden Tasks erhöhen (Starvation verhindern) */
+    for (int i = 0; i < SCHED_MAX_TASKS; i++) {
+        task_t *t = &tasks[i];
+        if (t->state != TASK_READY) continue;
+        t->wait_ticks++;
+        if (t->wait_ticks >= AGING_THRESHOLD) {
+            t->wait_ticks = 0;
+            if (t->priority < 254)
+                t->priority++;   /* Temporärer Boost; wird bei Ausführung zurückgesetzt */
+        }
+    }
+
+    /* 3. Den READY-Task mit der höchsten Priorität finden.
+     *    Bei gleicher Priorität wird der Task nach dem aktuellen bevorzugt
+     *    (Round-Robin Entscheidungsfindung). */
+    int      start     = current_task ? (int)(current_task - tasks) : -1;
+    task_t  *best      = NULL;
+    int      best_idx  = -1;
+
     for (int i = 1; i <= SCHED_MAX_TASKS; i++) {
         int idx = (start + i) % SCHED_MAX_TASKS;
-        if (tasks[idx].state == TASK_READY || tasks[idx].state == TASK_RUNNING)
-            return &tasks[idx];
+        task_t *t = &tasks[idx];
+        if (t->state != TASK_READY && t->state != TASK_RUNNING) continue;
+        if (!best || t->priority > best->priority) {
+            best     = t;
+            best_idx = idx;
+        }
     }
-    return NULL;
+    (void)best_idx;
+    return best;
 }
 
-/* ── Timer IRQ handler ───────────────────────────────────────────── */
+/* ── Timer-IRQ-Handler ───────────────────────────────────────────── */
 static void timer_handler(cpu_regs_t *regs)
 {
     (void)regs;
     uptime_ticks++;
 
-    /* Only schedule if the scheduler is running */
     if (!current_task) return;
 
+    /* Quantums-Ticks des aktuellen Tasks verringern */
+    if (current_task->quantum_ticks > 0)
+        current_task->quantum_ticks--;
+
+    /* Nur unterbrechen, wenn das Quantum verbraucht ist */
+    if (current_task->quantum_ticks > 0) return;
+
     task_t *next = sched_next();
-    if (!next || next == current_task) return;
+    if (!next || next == current_task) {
+        /* Quantum auffüllen und fortfahren */
+        current_task->quantum_ticks = SCHED_QUANTUM_MS / (1000 / PIT_FREQ_HZ);
+        return;
+    }
 
     task_t *old = current_task;
     current_task = next;
@@ -78,121 +121,132 @@ static void timer_handler(cpu_regs_t *regs)
     old->state  = (old->state == TASK_RUNNING) ? TASK_READY : old->state;
     next->state = TASK_RUNNING;
 
-    /* Update the kernel stack in the TSS for the new task */
-    tss_set_kernel_stack(next->stack_top);
+    /* Quantum für den neuen Task auffüllen */
+    next->quantum_ticks = SCHED_QUANTUM_MS / (1000 / PIT_FREQ_HZ);
+    next->run_ticks++;
 
+    /* Basis-Priorität wiederherstellen, nachdem der Aging-Boost "verbraucht" wurde */
+    if (next->priority > next->base_priority)
+        next->priority = next->base_priority;
+    next->wait_ticks = 0;
+
+    tss_set_kernel_stack(next->stack_top);
     sched_switch_context(&old->ctx, &next->ctx);
 }
 
-/* ── Idle task: runs when nothing else is ready ──────────────────── */
+/* ── Idle-Task ───────────────────────────────────────────────────── */
 static void idle_task_fn(void)
 {
-    for (;;) {
-        sti();
-        hlt();
-    }
+    for (;;) { sti(); hlt(); }
 }
 
-/* ── Public: sched_init ──────────────────────────────────────────── */
+/* ── Öffentlich: sched_init ──────────────────────────────────────── */
 void sched_init(void)
 {
     memset(tasks, 0, sizeof(tasks));
 
-    /* Configure PIT */
     pit_init(PIT_FREQ_HZ);
     irq_register(IRQ_TIMER, timer_handler);
 
-    /* Create the idle task */
-    task_t *idle = task_create(idle_task_fn, "idle");
-    if (!idle) kpanic("sched_init: cannot create idle task\n");
+    task_t *idle = task_create_prio(idle_task_fn, "idle", TASK_PRIO_IDLE);
+    if (!idle) kpanic("sched_init: kann Idle-Task nicht erstellen\n");
 
-    /* The idle task is immediately the current task */
     idle->state = TASK_RUNNING;
     current_task = idle;
     tss_set_kernel_stack(idle->stack_top);
 
-    KINFO("Scheduler: initialised  (tick=%u Hz)\n", PIT_FREQ_HZ);
+    KINFO("Scheduler: initialisiert (Tick=%u Hz, Prioritäts-Scheduling AN)\n",
+          PIT_FREQ_HZ);
 }
 
-/* ── Public: task_create ─────────────────────────────────────────── */
-task_t *task_create(task_fn_t fn, const char *name)
+/* ── Intern: Gemeinsame Task-Initialisierung ─────────────────────── */
+static task_t *task_alloc(task_fn_t fn, const char *name, uint8_t priority)
 {
-    /* Find a free slot */
     task_t *t = NULL;
     for (int i = 0; i < SCHED_MAX_TASKS; i++) {
         if (tasks[i].state == TASK_UNUSED) { t = &tasks[i]; break; }
     }
     if (!t) return NULL;
 
-    /* Allocate a stack (2 pages = 8 KB) */
     uint32_t stack_pages = SCHED_STACK_SIZE / PAGE_SIZE;
     uint32_t stack_phys  = pmm_alloc_pages(stack_pages);
     if (!stack_phys) return NULL;
 
     memset(t, 0, sizeof(*t));
-    t->id         = next_id++;
-    t->state      = TASK_READY;
-    t->stack_phys = stack_phys;
-    t->stack_top  = stack_phys + SCHED_STACK_SIZE;
+    t->id            = next_id++;
+    t->state         = TASK_READY;
+    t->stack_phys    = stack_phys;
+    t->stack_top     = stack_phys + SCHED_STACK_SIZE;
+    t->priority      = priority;
+    t->base_priority = priority;
+    t->quantum_ticks = SCHED_QUANTUM_MS / (1000 / PIT_FREQ_HZ);
     strncpy(t->name, name ? name : "unnamed", sizeof(t->name) - 1);
 
-    /*
-     * Set up the initial context so that when sched_switch_context
-     * "returns" into the new task, execution starts at @fn.
-     *
-     * The context save/restore in isr.S expects the return address on
-     * the task's stack.  We push fn's address there.
-     */
     uint32_t *stack = (uint32_t *)t->stack_top;
-    *(--stack) = 0x00000000;   /* Fake return address (task_exit) */
-    *(--stack) = (uint32_t)fn; /* EIP to jump to on first switch   */
+    *(--stack) = 0x00000000;
+    *(--stack) = (uint32_t)fn;
 
     t->ctx.esp    = (uint32_t)stack;
     t->ctx.eip    = (uint32_t)fn;
-    t->ctx.eflags = 0x0202;   /* IF=1, reserved bit 1 set          */
+    t->ctx.eflags = 0x0202;
 
     return t;
 }
 
-/* ── Public: task_exit ───────────────────────────────────────────── */
+/* ── Öffentlich: task_create ─────────────────────────────────────── */
+task_t *task_create(task_fn_t fn, const char *name)
+{
+    return task_alloc(fn, name, TASK_PRIO_NORMAL);
+}
+
+/* ── Öffentlich: task_create_prio ────────────────────────────────── */
+task_t *task_create_prio(task_fn_t fn, const char *name, uint8_t priority)
+{
+    return task_alloc(fn, name, priority);
+}
+
+/* ── Öffentlich: task_set_priority ───────────────────────────────── */
+void task_set_priority(task_t *t, uint8_t priority)
+{
+    if (!t) t = current_task;
+    if (!t) return;
+    t->base_priority = priority;
+    t->priority      = priority;
+}
+
+/* ── Öffentlich: task_exit ───────────────────────────────────────── */
 void task_exit(int exit_code)
 {
     uint32_t flags = irq_save();
     if (current_task) {
         current_task->exit_code = exit_code;
         current_task->state     = TASK_ZOMBIE;
-        pmm_free_pages(current_task->stack_phys,
-                       SCHED_STACK_SIZE / PAGE_SIZE);
+        pmm_free_pages(current_task->stack_phys, SCHED_STACK_SIZE / PAGE_SIZE);
     }
     irq_restore(flags);
-
-    /* Yield; the scheduler will never pick us again (ZOMBIE) */
     task_yield();
-    for (;;) hlt();   /* Should never reach here */
+    for (;;) hlt();
 }
 
-/* ── Public: task_yield ──────────────────────────────────────────── */
+/* ── Öffentlich: task_yield ──────────────────────────────────────── */
 void task_yield(void)
 {
-    /* Trigger a software context switch by invoking the timer logic */
-    __asm__ volatile ("int $0x20");   /* Vector 32 = IRQ0 */
+    __asm__ volatile ("int $0x20");
 }
 
-/* ── Public: task_sleep ──────────────────────────────────────────── */
+/* ── Öffentlich: task_sleep ──────────────────────────────────────── */
 void task_sleep(uint32_t ms)
 {
     if (!current_task) return;
-
     uint32_t flags = irq_save();
     uint32_t now_ms = uptime_ticks * (1000 / PIT_FREQ_HZ);
     current_task->sleep_until_ms = now_ms + ms;
     current_task->state = TASK_BLOCKED;
     irq_restore(flags);
-
     task_yield();
 }
 
-/* ── Public: task_wake ───────────────────────────────────────────── */
+/* ── Öffentlich: task_wake ───────────────────────────────────────── */
 void task_wake(task_t *t)
 {
     if (t && t->state == TASK_BLOCKED) {
@@ -201,9 +255,9 @@ void task_wake(task_t *t)
     }
 }
 
-/* ── Public: accessors ───────────────────────────────────────────── */
-task_t  *sched_current(void)     { return current_task; }
-uint32_t sched_uptime_ms(void)   { return uptime_ticks * (1000 / PIT_FREQ_HZ); }
+/* ── Öffentlich: Zugriffsmethoden ────────────────────────────────── */
+task_t  *sched_current(void)   { return current_task; }
+uint32_t sched_uptime_ms(void) { return uptime_ticks * (1000 / PIT_FREQ_HZ); }
 
 uint32_t sched_task_count(void)
 {
@@ -219,11 +273,12 @@ void sched_dump(void)
     static const char *state_names[] = {
         "UNUSED", "READY", "RUNNING", "BLOCKED", "ZOMBIE"
     };
-    KINFO("Task list  (uptime %u ms):\n", sched_uptime_ms());
+    KINFO("Task-Liste (Uptime %u ms):\n", sched_uptime_ms());
     for (int i = 0; i < SCHED_MAX_TASKS; i++) {
         task_t *t = &tasks[i];
         if (t->state == TASK_UNUSED) continue;
-        KINFO("  [%2u] %-16s  %s  esp=0x%08x\n",
-              t->id, t->name, state_names[t->state], t->ctx.esp);
+        KINFO("  [%2u] %-16s  %s  prio=%3u  esp=0x%08x  ticks=%u\n",
+              t->id, t->name, state_names[t->state],
+              t->priority, t->ctx.esp, t->run_ticks);
     }
 }
