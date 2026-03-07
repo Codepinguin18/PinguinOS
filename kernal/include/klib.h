@@ -1,82 +1,82 @@
 /**
  * @file klib.h
- * @brief Minimale eigenständige String- und Speicher-Utilities für PinguinOS.
+ * @brief Minimal freestanding string and memory utilities for PinguinOS.
  *
- * Da wir mit -ffreestanding kompilieren und nicht gegen eine libc linken,
- * stellen wir unsere eigenen kleinen Implementierungen der gängigsten libc-Helfer bereit.
+ * Because we compile with -ffreestanding and do not link against any libc,
+ * we provide our own small implementations of the most common libc helpers.
  */
 #ifndef _KLIB_H
 #define _KLIB_H
 
 #include "types.h"
 
-/* ── Speicher ────────────────────────────────────────────────────── */
+/* ── Memory ──────────────────────────────────────────────────────── */
 
-/** Füllt @p n Bytes beginnend bei @p s mit dem Wert @p c. */
+/** Fill @p n bytes starting at @p s with value @p c. */
 void *memset(void *s, int c, size_t n);
 
-/** Kopiert @p n Bytes von @p src nach @p dst (Bereiche dürfen sich nicht überlappen). */
+/** Copy @p n bytes from @p src to @p dst (regions must not overlap). */
 void *memcpy(void *dst, const void *src, size_t n);
 
-/** Kopiert @p n Bytes und behandelt überlappende Bereiche korrekt. */
+/** Copy @p n bytes, handling overlapping regions correctly. */
 void *memmove(void *dst, const void *src, size_t n);
 
-/** Vergleicht @p n Bytes von @p a und @p b; gibt <0, 0 oder >0 zurück. */
+/** Compare @p n bytes of @p a and @p b; returns <0, 0, or >0. */
 int   memcmp(const void *a, const void *b, size_t n);
 
 /* ── Strings ─────────────────────────────────────────────────────── */
 
-/** Gibt die Länge des null-terminierten Strings @p s zurück. */
+/** Return length of null-terminated string @p s. */
 size_t strlen(const char *s);
 
-/** Kopiert den String @p src nach @p dst; dst muss Platz für src + NUL haben. */
+/** Copy string @p src into @p dst; dst must have room for src + NUL. */
 char  *strcpy(char *dst, const char *src);
 
-/** Kopiert maximal @p n Bytes von @p src nach @p dst; terminiert immer mit NUL. */
+/** Copy at most @p n bytes of @p src into @p dst; always NUL-terminates. */
 char  *strncpy(char *dst, const char *src, size_t n);
 
-/** Hängt @p src an @p dst an. */
+/** Append @p src to @p dst. */
 char  *strcat(char *dst, const char *src);
 
-/** Vergleicht zwei Strings; gibt <0, 0 oder >0 zurück. */
+/** Compare two strings; returns <0, 0, or >0. */
 int    strcmp(const char *a, const char *b);
 
-/** Vergleicht maximal @p n Zeichen. */
+/** Compare at most @p n chars. */
 int    strncmp(const char *a, const char *b, size_t n);
 
-/** Findet das erste Vorkommen von @p c in @p s, oder NULL. */
+/** Find first occurrence of @p c in @p s, or NULL. */
 char  *strchr(const char *s, int c);
 
-/** Kehrt einen String an Ort und Stelle um; gibt @p s zurück. */
+/** Reverse a string in place; returns @p s. */
 char  *strrev(char *s);
 
-/* ── Zahlenformatierung ──────────────────────────────────────────── */
+/* ── Number formatting ───────────────────────────────────────────── */
 
 /**
- * @brief Wandelt eine vorzeichenlose Ganzzahl @p val in einen String zur gegebenen Basis um.
- * @param buf   Ausgabepuffer (muss groß genug sein).
- * @param val   Zu wandelnder Wert.
- * @param base  Zahlensystem-Basis (2–36).
- * @param upper Verwendet Großbuchstaben für Hex-Ziffern.
- * @return Anzahl der geschriebenen Zeichen (ohne NUL).
+ * @brief Convert unsigned integer @p val to a string in the given base.
+ * @param buf   Output buffer (must be large enough).
+ * @param val   Value to convert.
+ * @param base  Radix (2–36).
+ * @param upper Use uppercase hex digits.
+ * @return Number of characters written (not including NUL).
  */
 int uitoa(char *buf, uint32_t val, int base, bool upper);
 
-/** Wandelt eine vorzeichenbehaftete Ganzzahl in einen Dezimal-String um. */
+/** Convert signed integer to decimal string. */
 int itoa(char *buf, int32_t val);
 
 /**
- * @brief Minimale vsnprintf-Implementierung.
+ * @brief Minimal vsnprintf implementation.
  *
- * Unterstützte Spezifizierer: %c, %s, %d, %i, %u, %x, %X, %p, %%.
- * Unterstützt Breite und Null-Padding (z.B. %08x).
+ * Supported specifiers: %c, %s, %d, %i, %u, %x, %X, %p, %%.
+ * Supports width and zero-padding (e.g. %08x).
  *
- * @return Anzahl der Zeichen, die geschrieben worden wären
- *         (ohne den Null-Terminator), ähnlich wie C99 snprintf.
+ * @return Number of characters that would have been written
+ *         (excluding the null terminator), similar to C99 snprintf.
  */
 int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap);
 
-/** Wrapper um vsnprintf. */
+/** Wrapper around vsnprintf. */
 int snprintf(char *buf, size_t size, const char *fmt, ...);
 
 #endif /* _KLIB_H */

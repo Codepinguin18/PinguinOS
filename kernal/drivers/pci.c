@@ -1,6 +1,6 @@
 /**
  * @file pci.c
- * @brief PCI-Bus-Enumerierung für PinguinOS.
+ * @brief PCI bus enumeration for PinguinOS.
  */
 
 #include "../include/pci.h"
@@ -8,11 +8,11 @@
 #include "../include/serial.h"
 #include "../include/klib.h"
 
-/* ── Gerätetabelle ───────────────────────────────────────────────── */
+/* ── Device table ────────────────────────────────────────────────── */
 static pci_device_t devices[PCI_MAX_DEVICES];
 static uint32_t     device_count = 0;
 
-/* ── Zugriff auf den Konfigurationsraum ──────────────────────────── */
+/* ── Configuration space access ──────────────────────────────────── */
 uint32_t pci_read32(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg)
 {
     uint32_t addr = (1U << 31)
@@ -47,7 +47,7 @@ void pci_write32(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg, uint32_t v
     outl(PCI_CFG_DATA, val);
 }
 
-/* ── Eine Funktion enumerieren ───────────────────────────────────── */
+/* ── Enumerate one function ──────────────────────────────────────── */
 static void pci_check_function(uint8_t bus, uint8_t dev, uint8_t func)
 {
     uint16_t vendor = pci_read16(bus, dev, func, PCI_REG_VENDOR_ID);
@@ -72,7 +72,7 @@ static void pci_check_function(uint8_t bus, uint8_t dev, uint8_t func)
         d->bar[i] = pci_read32(bus, dev, func, PCI_REG_BAR0 + i * 4);
 }
 
-/* ── Öffentlich: pci_init ────────────────────────────────────────── */
+/* ── Public: pci_init ────────────────────────────────────────────── */
 void pci_init(void)
 {
     device_count = 0;
@@ -83,7 +83,7 @@ void pci_init(void)
             uint16_t vendor = pci_read16((uint8_t)bus, (uint8_t)dev, 0, PCI_REG_VENDOR_ID);
             if (vendor == PCI_VENDOR_NONE) continue;
 
-            /* Prüfen, ob Multifunktionsgerät */
+            /* Check if multi-function */
             uint8_t htype = pci_read8((uint8_t)bus, (uint8_t)dev, 0, PCI_REG_HEADER_TYPE);
             uint8_t max_func = (htype & 0x80) ? PCI_MAX_FUNCTION : 1;
 
@@ -92,10 +92,10 @@ void pci_init(void)
         }
     }
 
-    KINFO("PCI: %u Gerät(e) gefunden\n", device_count);
+    KINFO("PCI: found %u device(s)\n", device_count);
 }
 
-/* ── Lookup-Helfer ───────────────────────────────────────────────── */
+/* ── Lookup helpers ──────────────────────────────────────────────── */
 pci_device_t *pci_find_class(uint8_t class_code, uint8_t subclass)
 {
     for (uint32_t i = 0; i < device_count; i++)
@@ -117,10 +117,10 @@ uint32_t            pci_device_count(void) { return device_count; }
 
 void pci_dump(void)
 {
-    KINFO("PCI-Geräteliste (%u Einträge):\n", device_count);
+    KINFO("PCI device list (%u entries):\n", device_count);
     for (uint32_t i = 0; i < device_count; i++) {
         pci_device_t *d = &devices[i];
-        KINFO("  [%02x:%02x.%x] %04x:%04x  Klasse %02x.%02x  IRQ %u\n",
+        KINFO("  [%02x:%02x.%x] %04x:%04x  class %02x.%02x  IRQ %u\n",
               d->bus, d->device, d->function,
               d->vendor_id, d->device_id,
               d->class_code, d->subclass,

@@ -1,12 +1,12 @@
 /**
  * @file klib.c
- * @brief Eigenständige Datei für String-, Speicher- und Formatierungs-Hilfsfunktionen.
+ * @brief Freestanding string, memory, and formatting utilities.
  */
 
 #include "../include/klib.h"
 #include "../include/types.h"
 
-/* ── Speicher (Memory) ───────────────────────────────────────────── */
+/* ── Memory ──────────────────────────────────────────────────────── */
 
 void *memset(void *s, int c, size_t n)
 {
@@ -112,7 +112,7 @@ char *strrev(char *s)
     return s;
 }
 
-/* ── Zahlenformatierung (Number formatting) ───────────────────────── */
+/* ── Number formatting ───────────────────────────────────────────── */
 
 int uitoa(char *buf, uint32_t val, int base, bool upper)
 {
@@ -130,7 +130,7 @@ int uitoa(char *buf, uint32_t val, int base, bool upper)
             buf[len++] = digits[val % (uint32_t)base];
             val /= (uint32_t)base;
         }
-        /* Ziffern liegen in umgekehrter Reihenfolge vor */
+        /* Digits are in reverse order */
         for (int i = 0, j = len - 1; i < j; i++, j--) {
             char tmp = buf[i]; buf[i] = buf[j]; buf[j] = tmp;
         }
@@ -153,18 +153,18 @@ int itoa(char *buf, int32_t val)
 /* ── vsnprintf ───────────────────────────────────────────────────── */
 
 /*
- * Minimales vsnprintf mit Unterstützung für:
- *   %c  Einzelnes Zeichen (Character)
- *   %s  Zeichenkette (String)
- *   %d  Vorzeichenbehaftete Dezimalzahl
- *   %i  Vorzeichenbehaftete Dezimalzahl (Alias)
- *   %u  Vorzeichenlose Dezimalzahl
- *   %x  Hexadezimal (Kleinschreibung)
- *   %X  Hexadezimal (Großschreibung)
- *   %p  Pointer (0x Präfix, Hex Kleinschreibung)
- *   %%  Literales Prozentzeichen
+ * Minimal vsnprintf supporting:
+ *   %c  character
+ *   %s  string
+ *   %d  signed decimal
+ *   %i  signed decimal (alias)
+ *   %u  unsigned decimal
+ *   %x  lowercase hex
+ *   %X  uppercase hex
+ *   %p  pointer (0x prefix, lowercase hex)
+ *   %%  literal percent
  *
- * Breite (Width) und Null-Padding werden unterstützt (z. B. %08x, %5d).
+ * Width and zero-padding supported (e.g. %08x, %5d).
  */
 int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap)
 {
@@ -175,18 +175,18 @@ int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap)
 
     while (*fmt) {
         if (*fmt != '%') { EMIT(*fmt++); continue; }
-        fmt++;  /* Überspringe '%' */
+        fmt++;  /* skip '%' */
 
-        /* Optionales Null-Pad-Flag parsen */
+        /* Parse optional zero-pad flag */
         char pad_char = ' ';
         if (*fmt == '0') { pad_char = '0'; fmt++; }
 
-        /* Optionale Breite parsen */
+        /* Parse optional width */
         int width = 0;
         while (*fmt >= '0' && *fmt <= '9')
             width = width * 10 + (*fmt++ - '0');
 
-        /* Konvertierungsspezifizierer parsen */
+        /* Parse conversion specifier */
         switch (*fmt) {
         case 'c': {
             char c = (char)__builtin_va_arg(ap, int);
@@ -244,7 +244,7 @@ int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap)
         fmt++;
     }
 
-    /* Null-Terminierung innerhalb des Puffers */
+    /* Null-terminate within buffer */
     if (size > 0)
         buf[pos < size ? pos : size - 1] = '\0';
 
@@ -259,5 +259,35 @@ int snprintf(char *buf, size_t size, const char *fmt, ...)
     __builtin_va_start(ap, fmt);
     int r = vsnprintf(buf, size, fmt, ap);
     __builtin_va_end(ap);
+    return r;
+}
+
+/* ── 64-bit Math Helpers (for 32-bit GCC without libgcc) ────────── */
+
+uint64_t __udivdi3(uint64_t n, uint64_t d)
+{
+    uint64_t q = 0;
+    uint64_t r = 0;
+    if (d == 0) return 0; /* Division by zero */
+    for (int i = 63; i >= 0; i--) {
+        r <<= 1;
+        if ((n >> i) & 1) r |= 1;
+        if (r >= d) {
+            r -= d;
+            q |= (1ULL << i);
+        }
+    }
+    return q;
+}
+
+uint64_t __umoddi3(uint64_t n, uint64_t d)
+{
+    uint64_t r = 0;
+    if (d == 0) return 0; /* Modulo by zero */
+    for (int i = 63; i >= 0; i--) {
+        r <<= 1;
+        if ((n >> i) & 1) r |= 1;
+        if (r >= d) r -= d;
+    }
     return r;
 }

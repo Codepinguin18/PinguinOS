@@ -1,0 +1,2 @@
+  CC    klib.c
+  LD    build/kernel.elf

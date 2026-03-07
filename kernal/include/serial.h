@@ -1,11 +1,11 @@
 /**
  * @file serial.h
- * @brief 16550 UART Treiber für die serielle Schnittstelle in PinguinOS.
+ * @brief 16550 UART serial port driver for PinguinOS.
  *
- * Bietet Textausgabe über COM1 für QEMUs -serial stdio Debug-Konsole.
- * Die serielle Schnittstelle wird auch für die Kernel-Log-Funktionen (klog_*) genutzt.
+ * Provides text output to COM1 for QEMU's -serial stdio debug console.
+ * The serial port is also used for the kernel log (klog_*) functions.
  *
- * Verwendung mit QEMU:
+ * Usage with QEMU:
  *   qemu-system-x86_64 -cdrom kernel.iso -m 512M -serial stdio
  */
 #ifndef _SERIAL_H
@@ -13,28 +13,28 @@
 
 #include "types.h"
 
-/* ── Port-Basisadressen ──────────────────────────────────────────── */
+/* ── Port base addresses ─────────────────────────────────────────── */
 #define SERIAL_COM1  0x3F8
 #define SERIAL_COM2  0x2F8
 #define SERIAL_COM3  0x3E8
 #define SERIAL_COM4  0x2E8
 
-/* ── 16550 Register-Offsets ──────────────────────────────────────── */
-#define UART_DATA    0   /* Daten-Register (Lesen = RX, Schreiben = TX) */
-#define UART_IER     1   /* Interrupt-Enable-Register                  */
-#define UART_IIR     2   /* Interrupt-Identifikationsregister (Lesen)   */
-#define UART_FCR     2   /* FIFO-Control-Register (Schreiben)           */
-#define UART_LCR     3   /* Line-Control-Register                      */
-#define UART_MCR     4   /* Modem-Control-Register                     */
-#define UART_LSR     5   /* Line-Status-Register                       */
-#define UART_MSR     6   /* Modem-Status-Register                      */
+/* ── 16550 register offsets ──────────────────────────────────────── */
+#define UART_DATA    0   /* Data register (read = RX, write = TX)     */
+#define UART_IER     1   /* Interrupt enable register                  */
+#define UART_IIR     2   /* Interrupt identification register (read)   */
+#define UART_FCR     2   /* FIFO control register (write)              */
+#define UART_LCR     3   /* Line control register                      */
+#define UART_MCR     4   /* Modem control register                     */
+#define UART_LSR     5   /* Line status register                       */
+#define UART_MSR     6   /* Modem status register                      */
 #define UART_SCRATCH 7
 
-/* Line Status Register Bits */
-#define UART_LSR_DR    (1 << 0)   /* Daten bereit        */
-#define UART_LSR_THRE  (1 << 5)   /* TX Holding Register leer */
+/* Line Status Register bits */
+#define UART_LSR_DR    (1 << 0)   /* Data ready          */
+#define UART_LSR_THRE  (1 << 5)   /* TX holding reg empty */
 
-/* ── Log-Level ───────────────────────────────────────────────────── */
+/* ── Log levels ──────────────────────────────────────────────────── */
 typedef enum log_level {
     LOG_DEBUG = 0,
     LOG_INFO  = 1,
@@ -43,32 +43,32 @@ typedef enum log_level {
     LOG_PANIC = 4,
 } log_level_t;
 
-/* ── Öffentliche API ─────────────────────────────────────────────── */
+/* ── Public API ──────────────────────────────────────────────────── */
 
 /**
- * @brief Initialisiert COM1 mit 115200 Baud, 8N1.
- * @return true wenn der UART erkannt und konfiguriert wurde, sonst false.
+ * @brief Initialise COM1 at 115200 baud, 8N1.
+ * @return true if UART detected and configured, false otherwise.
  */
 bool serial_init(void);
 
-/** Schreibt ein einzelnes Byte (blockiert, bis der TX-Puffer bereit ist). */
+/** Write a single byte (blocks until TX buffer is ready). */
 void serial_putc(char c);
 
-/** Schreibt einen null-terminierten String. */
+/** Write a null-terminated string. */
 void serial_puts(const char *str);
 
 /**
- * @brief Formatierte Ausgabe auf die serielle Schnittstelle (gleiche Spezifizierer wie vga_printf).
+ * @brief Formatted output to serial (same specifiers as vga_printf).
  */
 void serial_printf(const char *fmt, ...);
 
-/** Liest ein Byte von COM1 (blockierend). */
+/** Read a byte from COM1 (blocking). */
 char serial_getc(void);
 
-/** @return true wenn ein Zeichen im RX-Puffer wartet. */
+/** @return true if a character is waiting in the RX buffer. */
 bool serial_has_data(void);
 
-/* ── Kernel-Log Macros ───────────────────────────────────────────── */
+/* ── Kernel log macros ───────────────────────────────────────────── */
 void klog(log_level_t level, const char *fmt, ...);
 
 #define KDBG(fmt, ...)   klog(LOG_DEBUG, fmt, ##__VA_ARGS__)

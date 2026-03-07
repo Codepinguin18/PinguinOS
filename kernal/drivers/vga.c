@@ -1,18 +1,18 @@
 /**
  * @file vga.c
- * @brief VGA-Textmodus-Treiber + Linearer Framebuffer-Support für PinguinOS.
+ * @brief VGA text-mode driver + linear framebuffer support for PinguinOS.
  */
 
 #include "../include/vga.h"
 #include "../include/cpu.h"
 #include "../include/klib.h"
 
-/* ── Textmodus-Status ─────────────────────────────────────────────── */
+/* ── Text-mode state ─────────────────────────────────────────────── */
 static uint8_t  cur_col  = 0;
 static uint8_t  cur_row  = 0;
-static uint8_t  cur_attr;                 /* Aktuelles Farbattribut */
+static uint8_t  cur_attr;                 /* Current colour attribute */
 
-/* ── Framebuffer-Status ────────────────────────────────────────────── */
+/* ── Framebuffer state ────────────────────────────────────────────── */
 static uint32_t  fb_addr   = 0;
 static uint32_t  fb_pitch  = 0;
 static uint32_t  fb_width  = 0;
@@ -20,8 +20,8 @@ static uint32_t  fb_height = 0;
 static uint8_t   fb_bpp    = 0;
 static bool      fb_active = false;
 
-/* ── PSF1 8×8 Bitmap-Schriftart (nur druckbare ASCII 32–127) ─────── */
-/* Dies ist eine kompakte 8×8 Schriftart, 8 Bytes pro Zeichen.       */
+/* ── PSF1 8×8 bitmap font (only printable ASCII 32–127) ──────────── */
+/* This is a compact 8×8 font stored as 8 bytes per glyph.           */
 static const uint8_t font8x8[96][8] = {
     /* 0x20 space */ {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
     /* 0x21 ! */     {0x18,0x18,0x18,0x18,0x00,0x00,0x18,0x00},
@@ -121,7 +121,7 @@ static const uint8_t font8x8[96][8] = {
     /* 0x7F DEL */   {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF},
 };
 
-/* ── Textmodus-Helfer ────────────────────────────────────────────── */
+/* ── Text-mode helpers ───────────────────────────────────────────── */
 static void update_cursor(void)
 {
     uint16_t pos = (uint16_t)(cur_row * VGA_WIDTH + cur_col);
@@ -145,7 +145,7 @@ static void scroll(void)
     cur_row = VGA_HEIGHT - 1;
 }
 
-/* ── Öffentlich: Textmodus-API ───────────────────────────────────── */
+/* ── Public: text-mode API ───────────────────────────────────────── */
 void vga_init(void)
 {
     cur_attr = vga_make_attr(VGA_LIGHT_GREY, VGA_BLACK);
@@ -222,7 +222,7 @@ void vga_printf(const char *fmt, ...)
     vga_puts(buf);
 }
 
-/* ── Framebuffer-Implementierung ─────────────────────────────────── */
+/* ── Framebuffer implementation ──────────────────────────────────── */
 bool fb_init(multiboot_info_t *mbi)
 {
     if (!(mbi->flags & MULTIBOOT_INFO_FB)) return false;

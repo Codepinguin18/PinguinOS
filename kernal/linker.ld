@@ -1,31 +1,31 @@
 /**
- * linker.ld  –  Linker-Skript für den PinguinOS-Kernel (x86 32-Bit)
+ * linker.ld  –  PinguinOS kernel linker script (x86 32-bit)
  *
- * Virtuelle Ladeadresse: 1 MB (0x00100000) – Standard für Multiboot-Kernel.
+ * Virtual load address: 1 MB (0x00100000) – standard for Multiboot kernels.
  *
- * Sektionen:
- *   .multiboot  – Multiboot-Header (muss in den ersten 8 KB erscheinen)
- *   .text       – Ausführbarer Code
- *   .rodata     – Schreibgeschützte Daten (Const Strings, Tabellen)
- *   .data       – Initialisierte beschreibbare Daten
- *   .bss        – Uninitialisierte beschreibbare Daten (durch Loader genullt)
+ * Sections:
+ *   .multiboot  – Multiboot header (must appear in first 8 KB)
+ *   .text       – Executable code
+ *   .rodata     – Read-only data (const strings, tables)
+ *   .data       – Initialised writable data
+ *   .bss        – Uninitialised writable data (zero-filled by loader)
  *
- * Der Linker exportiert zwei Symbole für den physischen Speichermanager:
- *   _kernel_start  – Erstes Byte des Kernel-Images (physisch)
- *   _kernel_end    – Erstes Byte nach dem Kernel-Image (physisch),
- *                    aufgerundet auf eine 4 KB Seitengrenze
+ * The linker exports two symbols used by the physical memory manager:
+ *   _kernel_start  – first byte of the kernel image (physical)
+ *   _kernel_end    – first byte after the kernel image (physical)
+ *                    rounded up to a 4 KB page boundary
  */
 
 ENTRY(_start)
 
 SECTIONS
 {
-    /* ── Ladeadresse ─────────────────────────────────────────────── */
+    /* ── Load address ────────────────────────────────────────────── */
     . = 0x00100000;
 
     _kernel_start = .;
 
-    /* ── Multiboot-Header (erste 8 KB) ───────────────────────────── */
+    /* ── Multiboot header (first 8 KB) ──────────────────────────── */
     .multiboot ALIGN(4) :
     {
         *(.multiboot)
@@ -37,30 +37,30 @@ SECTIONS
         *(.text .text.*)
     }
 
-    /* ── Schreibgeschützte Daten ─────────────────────────────────── */
+    /* ── Read-only data ──────────────────────────────────────────── */
     .rodata ALIGN(4096) :
     {
         *(.rodata .rodata.*)
     }
 
-    /* ── Initialisierte Daten ────────────────────────────────────── */
+    /* ── Initialised data ────────────────────────────────────────── */
     .data ALIGN(4096) :
     {
         *(.data .data.*)
     }
 
-    /* ── Uninitialisierte Daten (BSS) ────────────────────────────── */
+    /* ── Uninitialised data (BSS) ────────────────────────────────── */
     .bss ALIGN(4096) :
     {
         *(COMMON)
         *(.bss .bss.*)
     }
 
-    /* ── End-Markierung (Seiten-ausgerichtet) ─────────────────────── */
+    /* ── End marker (page-aligned) ───────────────────────────────── */
     . = ALIGN(4096);
     _kernel_end = .;
 
-    /* ── Debug- und andere Sektionen verwerfen ───────────────────── */
+    /* ── Discard debug and other sections ───────────────────────── */
     /DISCARD/ :
     {
         *(.comment)

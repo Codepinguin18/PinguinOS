@@ -1,29 +1,28 @@
 /**
  * @file types.h
- * @brief Grundlegende Definitionen von Typen fester Breite für PinguinOS.
+ * @brief Fundamental fixed-width type definitions for PinguinOS.
  *
- * Der Kernel wird eigenständig (-ffreestanding) gebaut, daher können wir uns nicht
- * darauf verlassen, dass <stdint.h> von einer Host-libc verfügbar ist. Diese
- * Definitionen spiegeln die Standardwerte wider und sind sicher für i686 und
- * x86_64 Cross-Compiler.
+ * The kernel is built freestanding (-ffreestanding) so we cannot rely on
+ * <stdint.h> being available from a host libc. These definitions mirror the
+ * standard ones and are safe for both i686 and x86_64 cross-compilers.
  */
 #ifndef _TYPES_H
 #define _TYPES_H
 
-/* ── Vorzeichenlose Ganzzahlen ───────────────────────────────────── */
+/* ── Unsigned integers ───────────────────────────────────────────── */
 typedef unsigned char       uint8_t;
 typedef unsigned short      uint16_t;
 typedef unsigned int        uint32_t;
 typedef unsigned long long  uint64_t;
 
-/* ── Vorzeichenbehaftete Ganzzahlen ───────────────────────────────── */
+/* ── Signed integers ─────────────────────────────────────────────── */
 typedef signed char         int8_t;
 typedef signed short        int16_t;
 typedef signed int          int32_t;
 typedef signed long long    int64_t;
 
-/* ── Ganzzahlen in Pointer-Größe ──────────────────────────────────── */
-typedef uint32_t            uintptr_t;   /* Für 64-Bit auf uint64_t ändern */
+/* ── Pointer-sized integers ──────────────────────────────────────── */
+typedef uint32_t            uintptr_t;   /* Change to uint64_t for 64-bit */
 typedef int32_t             intptr_t;
 typedef uint32_t            size_t;
 typedef int32_t             ssize_t;
@@ -38,7 +37,7 @@ typedef uint8_t bool;
 #define NULL ((void*)0)
 #endif
 
-/* ── Nützliche Macros ─────────────────────────────────────────────── */
+/* ── Useful macros ───────────────────────────────────────────────── */
 #define ALIGN_UP(val, align)   (((val) + (align) - 1) & ~((align) - 1))
 #define ALIGN_DOWN(val, align) ((val) & ~((align) - 1))
 #define MIN(a, b)              ((a) < (b) ? (a) : (b))
@@ -46,7 +45,7 @@ typedef uint8_t bool;
 #define ARRAY_SIZE(arr)        (sizeof(arr) / sizeof((arr)[0]))
 #define BIT(n)                 (1U << (n))
 
-/* ── Compiler-Hinweise ───────────────────────────────────────────── */
+/* ── Compiler hints ──────────────────────────────────────────────── */
 #define UNUSED(x)   ((void)(x))
 #define PACKED      __attribute__((packed))
 #define NORETURN    __attribute__((noreturn))

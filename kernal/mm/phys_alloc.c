@@ -1,33 +1,33 @@
 /**
  * @file phys_alloc.c
- * @brief Bitmap-basierter physischer Page-Allocator für PinguinOS.
+ * @brief Bitmap-based physical page allocator for PinguinOS.
  *
- * Die Bitmap wird direkt hinter dem Kernel-Image im Speicher platziert.
- * Ein Bit pro 4 KB Page: 0 = frei, 1 = belegt/reserviert.
+ * The bitmap is placed immediately after the kernel image in memory.
+ * One bit per 4 KB page:  0 = free, 1 = used/reserved.
  *
- * Nach pmm_init() spiegelt die Bitmap den nutzbaren Speicher wider, wie er
- * in der Multiboot-Memory-Map beschrieben ist, wobei das Kernel-Image
- * und die Bitmap selbst als belegt markiert sind.
+ * After pmm_init() the bitmap reflects the usable memory described by
+ * the multiboot memory map, with the kernel image and bitmap itself
+ * marked as used.
  */
 
 #include "../include/mm.h"
 #include "../include/klib.h"
 #include "../include/serial.h"
 
-/* ── Kernel-Image Grenzen (exportiert durch linker.ld) ────────────── */
-extern uint32_t _kernel_start;   /* Physischer Start des Kernels */
-extern uint32_t _kernel_end;     /* Physisches Ende des Kernels   */
+/* ── Kernel image boundaries (exported by linker.ld) ─────────────── */
+extern uint32_t _kernel_start;   /* Physical start of the kernel */
+extern uint32_t _kernel_end;     /* Physical end   of the kernel */
 
-/* ── Modul-privater Status ────────────────────────────────────────── */
+/* ── Module-private state ────────────────────────────────────────── */
 
-/* Die Bitmap liegt direkt nach dem Kernel im physischen Speicher.
- * MAX_PAGES / 8 = 32768 Bytes = 32 KB für 1 GB verwalteten RAM. */
+/* The bitmap lives right after the kernel in physical memory.
+ * MAX_PAGES / 8 = 32768 bytes = 32 KB for 1 GB of RAM tracked. */
 static uint32_t *bitmap       = NULL;
 static uint32_t  total_pages  = 0;
 static uint32_t  free_pages   = 0;
-static uint32_t  bitmap_pages = 0;   /* Von der Bitmap belegte Pages */
+static uint32_t  bitmap_pages = 0;   /* Pages occupied by the bitmap */
 
-/* ── Bitmap-Helfer ───────────────────────────────────────────────── */
+/* ── Bitmap helpers ──────────────────────────────────────────────── */
 
 static INLINE void bitmap_set(uint32_t pfn)
 {
@@ -44,18 +44,18 @@ static INLINE bool bitmap_test(uint32_t pfn)
     return (bitmap[pfn / 32] >> (pfn % 32)) & 1U;
 }
 
-/* ── Öffentlich: pmm_init ────────────────────────────────────────── */
+/* ── Public: pmm_init ────────────────────────────────────────────── */
 void pmm_init(multiboot_info_t *mbi)
 {
     /*
-     * Schritt 1 – Gesamtspeicher ermitteln.
-     * Zuerst das einfache mem_upper Feld verwenden (KB über 1 MB),
-     * erweitert auf das erste Byte der Memory-Map, falls verfügbar.
+     * Step 1 – determine total memory.
+     * Use the simple mem_upper field first (KB above 1 MB), extended
+     * to the first byte of the memory map if available.
      */
     uint32_t mem_bytes = 0;
 
     if (mbi->flags & MULTIBOOT_INFO_MMAP) {
-        /* Die Memory-Map durchlaufen, um das höchste verfügbare Byte zu finden */
+        /* Walk the memory map to find the highest available byte */
         uint32_t offset = 0;
         while (offset < mbi->mmap_length) {
             multiboot_mmap_entry_t *entry =
@@ -70,11 +70,11 @@ void pmm_init(multiboot_info_t *mbi)
     }
 
     if (!mem_bytes) {
-        /* Ausweichlösung: mem_upper sind die KB des erweiterten Speichers ab 1 MB */
+        /* Fall back: mem_upper is KB of extended memory starting at 1 MB */
         mem_bytes = (1024 + mbi->mem_upper) * 1024;
     }
 
-    /* Auf unser hartes Limit begrenzen */
+    /* Cap at our hard limit */
     if (mem_bytes > PHYS_MEM_MAX)
         mem_bytes = PHYS_MEM_MAX;
 
@@ -82,20 +82,20 @@ void pmm_init(multiboot_info_t *mbi)
     free_pages  = 0;
 
     /*
-     * Schritt 2 – Bitmap direkt hinter dem Kernel platzieren.
-     * _kernel_end ist durch das Linker-Skript Page-aligned.
+     * Step 2 – place the bitmap right after the kernel.
+     * _kernel_end is page-aligned by the linker script.
      */
     bitmap = (uint32_t *)((uintptr_t)&_kernel_end);
 
-    uint32_t bitmap_bytes = (total_pages + 7) / 8;   /* auf Bytes aufrunden */
+    uint32_t bitmap_bytes = (total_pages + 7) / 8;   /* round up to bytes */
     bitmap_bytes = ALIGN_UP(bitmap_bytes, PAGE_SIZE);
     bitmap_pages = bitmap_bytes / PAGE_SIZE;
 
-    /* Initial alles als belegt markieren */
+    /* Mark everything as used initially */
     memset(bitmap, 0xFF, bitmap_bytes);
 
     /*
-     * Schritt 3 – Memory-Map durchlaufen und verfügbare Regionen freigeben.
+     * Step 3 – walk the memory map and free available regions.
      */
     if (mbi->flags & MULTIBOOT_INFO_MMAP) {
         uint32_t offset = 0;
@@ -104,7 +104,7 @@ void pmm_init(multiboot_info_t *mbi)
                 (multiboot_mmap_entry_t *)(mbi->mmap_addr + offset);
 
             if (entry->type == MULTIBOOT_MMAP_AVAILABLE) {
-                /* Auf 32-Bit begrenzen und nach innen Page-alignen */
+                /* Clamp to 32-bit and page-align inward */
                 uint32_t start = (uint32_t)ALIGN_UP(
                     (uint64_t)entry->addr > 0xFFFFFFFF ? 0xFFFFFFFF : (uint32_t)entry->addr,
                     PAGE_SIZE);
@@ -120,25 +120,25 @@ void pmm_init(multiboot_info_t *mbi)
             offset += entry->size + 4;
         }
     } else {
-        /* Keine Memory-Map: mem_lower / mem_upper vertrauen */
-        /* Unterer Speicher (0–640 KB) */
+        /* No memory map: trust mem_lower / mem_upper */
+        /* Lower memory (0–640 KB) */
         pmm_mark_free(0x1000, mbi->mem_lower * 1024);
-        /* Erweiterter Speicher (ab 1 MB) */
+        /* Extended memory (1 MB onwards) */
         pmm_mark_free(0x100000, mem_bytes);
     }
 
     /*
-     * Schritt 4 – Kernel + Bitmap wieder als belegt markieren, damit
-     * diese Pages niemals vergeben werden.
+     * Step 4 – re-mark kernel + bitmap as used so we never give
+     * those pages away.
      */
     uint32_t kern_start = (uint32_t)&_kernel_start;
     uint32_t kern_end   = (uint32_t)&_kernel_end;
     uint32_t bmap_end   = kern_end + bitmap_bytes;
 
-    /* Page 0 immer schützen (Real-Mode IVT) */
+    /* Always protect page 0 (real-mode IVT) */
     pmm_mark_used(0, PAGE_SIZE);
 
-    /* Kernel-Image */
+    /* Kernel image */
     pmm_mark_used(ALIGN_DOWN(kern_start, PAGE_SIZE),
                   ALIGN_UP(kern_end,     PAGE_SIZE));
 
@@ -152,7 +152,7 @@ void pmm_init(multiboot_info_t *mbi)
           free_pages);
 }
 
-/* ── Öffentlich: pmm_mark_used / pmm_mark_free ───────────────────── */
+/* ── Public: pmm_mark_used / pmm_mark_free ───────────────────────── */
 void pmm_mark_used(uint32_t start, uint32_t end)
 {
     uint32_t pfn_start = ADDR_TO_PFN(start);
@@ -179,23 +179,23 @@ void pmm_mark_free(uint32_t start, uint32_t end)
     }
 }
 
-/* ── Öffentlich: pmm_alloc_page ──────────────────────────────────── */
+/* ── Public: pmm_alloc_page ──────────────────────────────────────── */
 uint32_t pmm_alloc_page(void)
 {
-    /* Suche ab Seite 1 starten (Seite 0 überspringen) */
+    /* Start search from page 1 (skip page 0) */
     for (uint32_t pfn = 1; pfn < total_pages; pfn++) {
         if (!bitmap_test(pfn)) {
             bitmap_set(pfn);
             free_pages--;
             uint32_t addr = PFN_TO_ADDR(pfn);
-            memset((void *)addr, 0, PAGE_SIZE);   /* Seite nullen */
+            memset((void *)addr, 0, PAGE_SIZE);   /* Zero the page */
             return addr;
         }
     }
-    return 0;   /* Speicher voll */
+    return 0;   /* Out of memory */
 }
 
-/* ── Öffentlich: pmm_free_page ───────────────────────────────────── */
+/* ── Public: pmm_free_page ───────────────────────────────────────── */
 void pmm_free_page(uint32_t addr)
 {
     uint32_t pfn = ADDR_TO_PFN(addr);
@@ -206,20 +206,20 @@ void pmm_free_page(uint32_t addr)
     }
 }
 
-/* ── Öffentlich: Kontinuierliche Allokation ───────────────────────── */
+/* ── Public: contiguous alloc/free ──────────────────────────────── */
 uint32_t pmm_alloc_pages(uint32_t count)
 {
     if (count == 0) return 0;
     if (count == 1) return pmm_alloc_page();
 
-    /* Eine zusammenhängende Sequenz von @count freien Pages suchen */
+    /* Find a contiguous run of @count free pages */
     uint32_t run_start = 0, run_len = 0;
     for (uint32_t pfn = 1; pfn < total_pages; pfn++) {
         if (!bitmap_test(pfn)) {
             if (run_len == 0) run_start = pfn;
             run_len++;
             if (run_len == count) {
-                /* Alle als belegt markieren */
+                /* Mark all as used */
                 for (uint32_t i = run_start; i < run_start + count; i++) {
                     bitmap_set(i);
                     free_pages--;
@@ -241,6 +241,6 @@ void pmm_free_pages(uint32_t addr, uint32_t count)
         pmm_free_page(addr + i * PAGE_SIZE);
 }
 
-/* ── Öffentlich: Statistiken ─────────────────────────────────────── */
+/* ── Public: statistics ──────────────────────────────────────────── */
 uint32_t pmm_free_page_count(void)  { return free_pages;  }
 uint32_t pmm_total_page_count(void) { return total_pages; }

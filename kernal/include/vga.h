@@ -1,13 +1,13 @@
 /**
  * @file vga.h
- * @brief VGA-Textmodus und grundlegende Framebuffer-Ausgabe für PinguinOS.
+ * @brief VGA text-mode and basic framebuffer output for PinguinOS.
  *
- * Unterstützt:
- *  – 80×25 VGA-Textmodus (Memory-mapped bei 0xB8000).
- *  – Farb-Attributbyte-Kodierung (Vordergrund- + Hintergrundfarbe).
- *  – Cursor-Positionierung über VGA-CRTC-Ports.
- *  – Formatierte Ausgabe im printf-Stil (vga_printf).
- *  – Optionaler linearer 32-bpp Framebuffer, falls GRUB einen übergibt.
+ * Supports:
+ *  – 80×25 VGA text mode (memory-mapped at 0xB8000).
+ *  – Colour attribute byte encoding (foreground + background colours).
+ *  – Cursor positioning via VGA CRTC ports.
+ *  – printf-style formatted output (vga_printf).
+ *  – Optional 32-bpp linear framebuffer if GRUB hands one over.
  */
 #ifndef _VGA_H
 #define _VGA_H
@@ -15,18 +15,18 @@
 #include "types.h"
 #include "multiboot.h"
 
-/* ── Textmodus-Dimensionen ───────────────────────────────────────── */
+/* ── Text-mode dimensions ────────────────────────────────────────── */
 #define VGA_WIDTH   80
 #define VGA_HEIGHT  25
 #define VGA_MEMORY  ((volatile uint16_t *)0xB8000)
 
-/* ── VGA-CRTC-Portadressen ───────────────────────────────────────── */
+/* ── VGA CRTC port addresses ─────────────────────────────────────── */
 #define VGA_CRTC_ADDR  0x3D4
 #define VGA_CRTC_DATA  0x3D5
 #define VGA_CURSOR_HI  0x0E
 #define VGA_CURSOR_LO  0x0F
 
-/* ── Farbkonstanten (Standard 4-Bit VGA-Palette) ────────────────── */
+/* ── Colour constants (standard 4-bit VGA palette) ──────────────── */
 typedef enum vga_color {
     VGA_BLACK         = 0,
     VGA_BLUE          = 1,
@@ -46,88 +46,88 @@ typedef enum vga_color {
     VGA_WHITE         = 15,
 } vga_color_t;
 
-/** Packt eine Vordergrund- und Hintergrundfarbe in ein VGA-Attributbyte. */
+/** Pack a foreground and background colour into a VGA attribute byte. */
 static INLINE uint8_t vga_make_attr(vga_color_t fg, vga_color_t bg) {
     return (uint8_t)((bg << 4) | (fg & 0x0F));
 }
 
-/** Kombiniert ein Zeichen und ein Attributbyte zu einer 16-Bit VGA-Zelle. */
+/** Combine a character and attribute byte into a 16-bit VGA cell. */
 static INLINE uint16_t vga_make_entry(char c, uint8_t attr) {
     return (uint16_t)((uint16_t)attr << 8) | (uint8_t)c;
 }
 
-/* ── Öffentliche API – Textmodus ─────────────────────────────────── */
+/* ── Public API – text mode ──────────────────────────────────────── */
 
 /**
- * @brief Initialisiert den VGA-Text-Treiber.
+ * @brief Initialise the VGA text driver.
  *
- * Leert den Bildschirm und positioniert den Cursor bei (0,0).
- * Sollte früh in der Kernel-Initialisierung vor jeder Ausgabe aufgerufen werden.
+ * Clears the screen and positions the cursor at (0,0).
+ * Should be called early in kernel init before any output.
  */
 void vga_init(void);
 
-/** Leert den gesamten Bildschirm mit der aktuellen Hintergrundfarbe. */
+/** Clear the entire screen with the current background colour. */
 void vga_clear(void);
 
-/** Setzt die aktive Vordergrundfarbe. */
+/** Set the active foreground colour. */
 void vga_set_fg(vga_color_t color);
 
-/** Setzt die aktive Hintergrundfarbe. */
+/** Set the active background colour. */
 void vga_set_bg(vga_color_t color);
 
-/** Setzt Vordergrund- und Hintergrundfarbe gleichzeitig. */
+/** Set both foreground and background colours at once. */
 void vga_set_color(vga_color_t fg, vga_color_t bg);
 
 /**
- * @brief Schreibt ein einzelnes Zeichen an die aktuelle Cursorposition.
+ * @brief Write a single character at the current cursor position.
  *
- * Behandelt \\n (Zeilenumbruch), \\r, \\t (4-Leerzeichen Tab) und \\b (Rücktaste).
- * Scrollt den Bildschirm eine Zeile nach oben, wenn der Cursor den unteren Rand erreicht.
+ * Handles \\n (newline), \\r, \\t (4-space tab), and \\b (backspace).
+ * Scrolls the screen up by one line when the cursor reaches the bottom.
  */
 void vga_putchar(char c);
 
-/** Schreibt einen null-terminierten String. */
+/** Write a null-terminated string. */
 void vga_puts(const char *str);
 
 /**
- * @brief Formatierte Ausgabe auf VGA (Untermenge von printf).
+ * @brief Formatted output to VGA (subset of printf).
  *
- * Unterstützte Format-Spezifizierer: %c, %s, %d, %i, %u, %x, %X, %p, %%.
- * Breite und Null-Padding (z.B. %08x) werden unterstützt.
+ * Supported format specifiers: %c, %s, %d, %i, %u, %x, %X, %p, %%.
+ * Width and zero-padding (e.g. %08x) are supported.
  */
 void vga_printf(const char *fmt, ...);
 
-/** Bewegt den Hardware-Cursor nach (Spalte, Zeile). */
+/** Move the hardware cursor to (col, row). */
 void vga_set_cursor(uint8_t col, uint8_t row);
 
-/** Gibt die aktuelle Cursor-Spalte zurück (0-basiert). */
+/** Get current cursor column (0-based). */
 uint8_t vga_get_col(void);
 
-/** Gibt die aktuelle Cursor-Zeile zurück (0-basiert). */
+/** Get current cursor row (0-based). */
 uint8_t vga_get_row(void);
 
-/* ── Öffentliche API – Linearer Framebuffer ─────────────────────── */
+/* ── Public API – linear framebuffer ────────────────────────────── */
 
 /**
- * @brief Initialisiert einen linearen (VESA/GOP) Framebuffer, falls verfügbar.
- * @param mbi  Multiboot-Info; Framebuffer-Felder werden daraus gelesen.
- * @return true, falls ein Framebuffer gefunden und initialisiert wurde.
+ * @brief Initialise a linear (VESA/GOP) framebuffer if available.
+ * @param mbi  Multiboot info; framebuffer fields are read from it.
+ * @return true if a framebuffer was found and initialised.
  */
 bool fb_init(multiboot_info_t *mbi);
 
-/** Zeichnet ein Pixel bei (x,y) mit dem 32-bpp Farbwert @p color. */
+/** Draw a pixel at (x,y) with 32-bpp colour value @p color. */
 void fb_put_pixel(uint32_t x, uint32_t y, uint32_t color);
 
-/** Leert den gesamten Framebuffer mit @p color. */
+/** Fill the entire framebuffer with @p color. */
 void fb_clear(uint32_t color);
 
-/** Zeichnet ein gefülltes Rechteck. */
+/** Draw a filled rectangle. */
 void fb_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color);
 
-/** Zeichnet ein ASCII-Zeichen an der Framebuffer-Pixelposition (x,y). */
+/** Draw an ASCII character at framebuffer pixel position (x,y). */
 void fb_put_char(uint32_t x, uint32_t y, char c, uint32_t fg, uint32_t bg);
 
-/** Zeichnet einen null-terminierten String beginnend bei Pixel (x,y). */
+/** Draw a null-terminated string starting at pixel (x,y). */
 void fb_puts(uint32_t x, uint32_t y, const char *str, uint32_t fg, uint32_t bg);
 
 #endif /* _VGA_H */

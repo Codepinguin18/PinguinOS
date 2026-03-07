@@ -1,20 +1,20 @@
 /**
  * @file kernel.c
- * @brief PinguinOS – Kernel-Einstiegspunkt und Subsystem-Initialisierung.
+ * @brief PinguinOS – kernel entry point and subsystem initialisation.
  *
- * cmain() wird vom Multiboot-Bootstrap in boot.S aufgerufen.
- * Initialisierungs-Reihenfolge (kritisch – nicht unachtsam umstellen):
+ * cmain() is called by the Multiboot bootstrap in boot.S.
+ * Initialisation order (critical – do not reorder carelessly):
  *
- *   1. VGA / Serial  – Ausgabe so früh wie möglich verfügbar
- *   2. GDT           – Segmentregister korrekt konfiguriert
- *   3. IDT / PIC     – Exception- / IRQ-Behandlung online
- *   4. CPU Info      – CPUID-Daten gesammelt
- *   5. PMM           – Physische Seiten getrackt
- *   6. Paging        – MMU aktiviert
- *   7. Heap          – kmalloc/kfree verfügbar
- *   8. PCI           – Geräte-Enumeration
- *   9. Scheduler     – Präemptives Multitasking beginnt
- *  10. Kernel-Tasks  – Demo-Tasks erstellt, Interrupts aktiviert
+ *   1. VGA / serial  – output available as early as possible
+ *   2. GDT           – segment registers properly configured
+ *   3. IDT / PIC     – exception / IRQ handling online
+ *   4. CPU info      – CPUID data collected
+ *   5. PMM           – physical pages tracked
+ *   6. Paging        – MMU enabled
+ *   7. Heap          – kmalloc/kfree available
+ *   8. PCI           – device enumeration
+ *   9. Scheduler     – preemptive multitasking begins
+ *  10. Kernel tasks  – demo tasks created, interrupts enabled
  */
 
 #include "include/types.h"
@@ -44,10 +44,10 @@ static void print_banner(void)
         "                |___/                           \n"
     );
     vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
-    vga_puts("  PinguinOS v0.1.0  |  x86 32-bit  |  Entwickelt mit <3\n\n");
+    vga_puts("  PinguinOS v2.1  |  x86 32-bit  |  Built with <3\n\n");
 }
 
-/* ── Demo-Task: Lässt einen Zähler auf dem Bildschirm blinken ────── */
+/* ── Demo task: blinks a counter on screen ───────────────────────── */
 static void demo_task_a(void)
 {
     uint32_t count = 0;
@@ -70,42 +70,42 @@ static void demo_task_b(void)
     }
 }
 
-/* ── Kernel-Einstiegspunkt ───────────────────────────────────────── */
+/* ── Kernel entry point ──────────────────────────────────────────── */
 /**
- * @brief C-Einstiegspunkt, aufgerufen von boot.S nach Einrichtung des Stacks.
+ * @brief C entry point called by boot.S after setting up the stack.
  *
- * @param magic  Muss MULTIBOOT_MAGIC (0x2BADB002) entsprechen.
- * @param mbi    Physische Adresse der multiboot_info_t Struktur.
+ * @param magic  Must equal MULTIBOOT_MAGIC (0x2BADB002).
+ * @param mbi    Physical address of the multiboot_info_t structure.
  */
 void cmain(uint32_t magic, multiboot_info_t *mbi)
 {
-    /* ── Schritt 1: Frühe Ausgabe ─────────────────────────────────── */
+    /* ── Step 1: Early output ─────────────────────────────────────── */
     vga_init();
     serial_init();
 
     print_banner();
-    KINFO("PinguinOS bootet...\n");
+    KINFO("PinguinOS booting...\n");
 
-    /* ── Multiboot-Magic verifizieren ─────────────────────────────── */
+    /* ── Verify Multiboot magic ──────────────────────────────────── */
     if (magic != MULTIBOOT_MAGIC) {
-        kpanic("Falsche Multiboot-Magic: 0x%08x (erwartet 0x%08x)\n",
+        kpanic("Bad Multiboot magic: 0x%08x (expected 0x%08x)\n",
                magic, MULTIBOOT_MAGIC);
     }
-    KINFO("Multiboot-Magic OK  (mbi @ 0x%08x)\n", (uint32_t)mbi);
+    KINFO("Multiboot magic OK  (mbi @ 0x%08x)\n", (uint32_t)mbi);
 
-    /* ── Schritt 2: GDT ────────────────────────────────────────────── */
+    /* ── Step 2: GDT ─────────────────────────────────────────────── */
     vga_printf("  [*] GDT...");
     gdt_init();
     vga_printf(" OK\n");
-    KINFO("GDT geladen\n");
+    KINFO("GDT loaded\n");
 
-    /* ── Schritt 3: IDT / PIC ─────────────────────────────────────── */
+    /* ── Step 3: IDT / PIC ───────────────────────────────────────── */
     vga_printf("  [*] IDT / PIC...");
     idt_init();
     vga_printf(" OK\n");
-    KINFO("IDT geladen, PIC auf Vektoren 32-47 remapped\n");
+    KINFO("IDT loaded, PIC remapped to vectors 32-47\n");
 
-    /* ── Schritt 4: CPU-Info ───────────────────────────────────────── */
+    /* ── Step 4: CPU info ────────────────────────────────────────── */
     vga_printf("  [*] CPU...");
     cpu_init();
     vga_printf(" OK\n");
@@ -114,67 +114,67 @@ void cmain(uint32_t magic, multiboot_info_t *mbi)
     const cpu_info_t *ci = cpu_get_info();
     vga_printf("      Vendor: %s  |  %s\n", ci->vendor, ci->brand);
 
-    /* ── Schritt 5: Physischer Speichermanager (PMM) ──────────────── */
+    /* ── Step 5: Physical memory manager ────────────────────────── */
     vga_printf("  [*] PMM...");
     pmm_init(mbi);
-    vga_printf(" OK  (%u MB frei)\n",
+    vga_printf(" OK  (%u MB free)\n",
                (pmm_free_page_count() * PAGE_SIZE) / (1024 * 1024));
 
-    /* ── Schritt 6: Paging ────────────────────────────────────────── */
+    /* ── Step 6: Paging ──────────────────────────────────────────── */
     vga_printf("  [*] Paging...");
     paging_init();
     vga_printf(" OK\n");
 
-    /* ── Schritt 7: Heap ──────────────────────────────────────────── */
+    /* ── Step 7: Heap ────────────────────────────────────────────── */
     vga_printf("  [*] Heap...");
     heap_init();
-    vga_printf(" OK  (bei 0x%08x)\n", KHEAP_START);
+    vga_printf(" OK  (at 0x%08x)\n", KHEAP_START);
 
-    /* Kurzer Heap-Selbsttest */
+    /* Quick heap self-test */
     void *p1 = kmalloc(128);
     void *p2 = kzalloc(64);
-    if (!p1 || !p2) kpanic("Heap-Selbsttest fehlgeschlagen!\n");
+    if (!p1 || !p2) kpanic("Heap self-test failed!\n");
     kfree(p1);
     kfree(p2);
-    KINFO("Heap-Selbsttest bestanden\n");
+    KINFO("Heap self-test passed\n");
 
-    /* ── Schritt 8: PCI ────────────────────────────────────────────── */
+    /* ── Step 8: PCI ─────────────────────────────────────────────── */
     vga_printf("  [*] PCI...");
     pci_init();
-    vga_printf(" OK  (%u Gerät(e))\n", pci_device_count());
+    vga_printf(" OK  (%u device(s))\n", pci_device_count());
     pci_dump();
 
-    /* ── Schritt 9: Framebuffer (optional) ────────────────────────── */
+    /* ── Step 9: Framebuffer (optional) ─────────────────────────── */
     if (fb_init(mbi)) {
         KINFO("Framebuffer: %ux%u @ %ubpp\n",
               mbi->framebuffer_width, mbi->framebuffer_height,
               mbi->framebuffer_bpp);
     }
 
-    /* ── Schritt 10: Scheduler ─────────────────────────────────────── */
+    /* ── Step 10: Scheduler ──────────────────────────────────────── */
     vga_printf("  [*] Scheduler...");
     sched_init();
     vga_printf(" OK\n");
 
-    /* ── Demo-Tasks erstellen ─────────────────────────────────────── */
+    /* ── Create demo tasks ───────────────────────────────────────── */
     task_create(demo_task_a, "demo_a");
     task_create(demo_task_b, "demo_b");
 
-    /* ── Alles erledigt – Interrupts aktivieren und in Idle-Schleife fallen ── */
+    /* ── All done – enable interrupts and drop into the idle loop ── */
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
-    vga_printf("\n  PinguinOS bereit!  Uptime: %u ms\n", sched_uptime_ms());
+    vga_printf("\n  PinguinOS ready!  Uptime: %u ms\n", sched_uptime_ms());
     vga_set_color(VGA_LIGHT_GREY, VGA_BLACK);
 
-    KINFO("Alle Subsysteme initialisiert – Interrupts werden aktiviert\n");
+    KINFO("All subsystems initialised – enabling interrupts\n");
     sched_dump();
 
-    /* Interrupts aktivieren; der PIT steuert nun den Scheduler */
+    /* Enable interrupts; the PIT will now drive the scheduler */
     sti();
 
     /*
-     * Die Startsequenz übergibt hier an den Idle-Task.
-     * In einem echten Kernel würden wir hier in den User-Space oder die Shell wechseln.
-     * Vorerst nur eine Endlosschleife; der Timer-IRQ hält das System am Laufen.
+     * The boot sequence hands off to the idle task here.
+     * In a real kernel we would drop into user space or the shell.
+     * For now just spin; the timer IRQ keeps things alive.
      */
     for (;;) {
         hlt();

@@ -1,16 +1,16 @@
 /**
  * @file mm.h
- * @brief Physischer Speichermanager (Bitmap-Allocator) für PinguinOS.
+ * @brief Physical memory manager (bitmap allocator) for PinguinOS.
  *
- * Der physische Speichermanager verfolgt 4 KB Seiten mithilfe einer flachen Bitmap.
- * Jedes Bit repräsentiert eine Seite: 0 = frei, 1 = belegt/reserviert.
+ * The physical memory manager tracks 4 KB pages using a flat bitmap.
+ * Each bit represents one page:  0 = free, 1 = used/reserved.
  *
  * Design:
- *   – Die Bitmap selbst befindet sich direkt nach der BSS-Sektion des Kernels.
- *   – Die Seiten im Bitmap-Bereich decken physische Adressen von 0 bis (max_pages * 4KB) ab.
- *   – Beim Booten sind zunächst alle Seiten als belegt markiert; die Multiboot-Memory-Map
- *     wird durchlaufen, um freie (verfügbare) Bereiche zu markieren, danach werden das
- *     Kernel-Image und die Bitmap wieder als belegt markiert.
+ *   – The bitmap itself is placed just after the kernel BSS section.
+ *   – Pages in the bitmap range cover physical addresses 0 – (max_pages*4KB).
+ *   – On boot, all pages are initially marked used; the multiboot memory
+ *     map is walked to mark free (available) regions, then the kernel
+ *     image and bitmap are re-marked as used.
  */
 #ifndef _MM_H
 #define _MM_H
@@ -18,73 +18,73 @@
 #include "types.h"
 #include "multiboot.h"
 
-/* ── Seitengrößen-Konstanten ─────────────────────────────────────── */
+/* ── Page size constants ─────────────────────────────────────────── */
 #define PAGE_SIZE        4096U
 #define PAGE_SHIFT       12
 #define PAGE_MASK        (~(PAGE_SIZE - 1))
 
-/* Umrechnung zwischen Byte-Adressen und Page Frame Numbers (PFNs). */
+/* Convert between byte addresses and page frame numbers (PFNs). */
 #define ADDR_TO_PFN(a)   ((uint32_t)(a) >> PAGE_SHIFT)
 #define PFN_TO_ADDR(p)   ((uint32_t)(p) << PAGE_SHIFT)
 
-/* Maximale Menge an physischem RAM, den wir verwalten (Standard: 1 GB). */
+/* Maximum amount of physical RAM we manage (1 GB default). */
 #define PHYS_MEM_MAX     (1024U * 1024U * 1024U)
-#define MAX_PAGES        (PHYS_MEM_MAX / PAGE_SIZE)   /* 262144 Seiten */
+#define MAX_PAGES        (PHYS_MEM_MAX / PAGE_SIZE)   /* 262144 pages */
 
-/* ── Öffentliche API ─────────────────────────────────────────────── */
+/* ── Public API ──────────────────────────────────────────────────── */
 
 /**
- * @brief Initialisiert den physischen Speichermanager.
- * @param mbi  Multiboot-Informationsstruktur vom Bootloader.
+ * @brief Initialise the physical memory manager.
+ * @param mbi  Multiboot information structure from the bootloader.
  *
- * Diese Funktion:
- *  1. Berechnet den gesamten verfügbaren RAM aus der BIOS-Memory-Map.
- *  2. Platziert die Seiten-Bitmap direkt nach der BSS-Sektion des Kernels.
- *  3. Markiert alle Seiten als reserviert und setzt dann freie Seiten gemäß
- *     der Multiboot-Memory-Map.
- *  4. Markiert den Bereich für Kernel + Bitmap wieder als belegt.
+ * This function:
+ *  1. Calculates total available RAM from the BIOS memory map.
+ *  2. Places the page bitmap right after the kernel's BSS.
+ *  3. Marks all pages as reserved, then sets free pages according to
+ *     the multiboot memory map.
+ *  4. Re-marks the kernel + bitmap region as used.
  */
 void pmm_init(multiboot_info_t *mbi);
 
 /**
- * @brief Allokiert eine physische Seite (4 KB, seiten-ausgerichtet).
- * @return Physische Adresse der allokierten Seite, oder 0 im Fehlerfall.
+ * @brief Allocate one physical page (4 KB, page-aligned).
+ * @return Physical address of the allocated page, or 0 on failure.
  */
 uint32_t pmm_alloc_page(void);
 
 /**
- * @brief Gibt eine zuvor allokierte physische Seite frei.
- * @param addr  Physische Adresse der Seite (muss seiten-ausgerichtet sein).
+ * @brief Free a previously allocated physical page.
+ * @param addr  Physical address of the page (must be page-aligned).
  */
 void pmm_free_page(uint32_t addr);
 
 /**
- * @brief Allokiert eine zusammenhängende Folge von @p count physischen Seiten.
- * @param count  Anzahl der benötigten zusammenhängenden Seiten.
- * @return Physische Adresse der ersten Seite, oder 0 im Fehlerfall.
+ * @brief Allocate a contiguous run of @p count physical pages.
+ * @param count  Number of contiguous pages required.
+ * @return Physical address of the first page, or 0 on failure.
  */
 uint32_t pmm_alloc_pages(uint32_t count);
 
 /**
- * @brief Gibt eine zusammenhängende Folge von @p count Seiten beginnend bei @p addr frei.
+ * @brief Free a contiguous run of @p count pages starting at @p addr.
  */
 void pmm_free_pages(uint32_t addr, uint32_t count);
 
-/** @return Gesamtzahl der freien Seiten. */
+/** @return Total number of free pages. */
 uint32_t pmm_free_page_count(void);
 
-/** @return Gesamtzahl der verwalteten Seiten. */
+/** @return Total number of pages managed. */
 uint32_t pmm_total_page_count(void);
 
 /**
- * @brief Markiert einen physischen Seitenbereich als belegt (reserviert ihn).
- * @param start  Startadresse (abgerundet auf Seitengrenze).
- * @param end    Endadresse (aufgerundet auf Seitengrenze).
+ * @brief Mark a physical page range as used (reserve it).
+ * @param start  Start address (rounded down to page boundary).
+ * @param end    End   address (rounded up   to page boundary).
  */
 void pmm_mark_used(uint32_t start, uint32_t end);
 
 /**
- * @brief Markiert einen physischen Seitenbereich als frei.
+ * @brief Mark a physical page range as free.
  */
 void pmm_mark_free(uint32_t start, uint32_t end);
 
