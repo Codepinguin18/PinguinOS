@@ -48,8 +48,8 @@ static irq_handler_t irq_handlers[16];
 static irq_handler_t exc_handlers[32];
 
 /* ── Helfer: Ein IDT-Gate kodieren ──────────────────────────────── */
-static void idt_set_gate(uint8_t vec, uint32_t handler,
-                          uint16_t sel, uint8_t type_attr)
+void idt_set_gate(uint8_t vec, uint32_t handler,
+                  uint16_t sel, uint8_t type_attr)
 {
     idt_entries[vec].offset_low  = (uint16_t)(handler & 0xFFFF);
     idt_entries[vec].selector    = sel;

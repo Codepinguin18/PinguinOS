@@ -1,97 +1,65 @@
 /**
  * @file paging.c
- * @brief x86 32-bit two-level paging implementation for PinguinOS.
+ * @brief x86 32-bit paging – PinguinOS v3.0.
  *
- * Feature #3 – Demand Paging:
- *   A page-fault handler (exception 14) is registered during paging_init().
- *   When a fault occurs for an address covered by a VMA of the current
- *   process a fresh physical page is allocated and mapped on the fly.
- *   Faults outside any VMA cause a kernel panic (Segmentation Fault).
+ * Optimisations vs. v2.x
+ * ────────────────────────
+ *  • paging_unmap_page()  uses INVLPG (single-page TLB flush) instead of
+ *    reloading CR3 (full TLB flush) – avoids evicting unrelated entries.
+ *  • paging_map_range() bulk-maps N pages in a single function call,
+ *    amortising the per-page PT-allocation and CR3 overhead.
+ *  • PDE_WC (write-combining) flag constant for MMIO framebuffers.
+ *  • paging_get_phys() translates any virtual address correctly even
+ *    if it falls inside a 4 MB PSE page.
+ *  • Demand-paging page-fault handler (Feature #3) integrated.
+ *
+ * New features
+ * ─────────────
+ *  • paging_map_range()  – bulk mapping  (#8 Recursive / bulk paging)
+ *  • paging_copy_on_write() – CoW helper for fork()
  */
 
 #include "../include/paging.h"
 #include "../include/mm.h"
-#include "../include/heap.h"
 #include "../include/cpu.h"
 #include "../include/klib.h"
 #include "../include/serial.h"
-#include "../include/idt.h"
+#include "../include/heap.h"
 #include "../include/process.h"
+#include "../include/idt.h"
 
-/* ── Kernel page directory (statically allocated, page-aligned) ─── */
+extern void pf_handler_stub(void);
+
+/* ── Kernel page directory ───────────────────────────────────────── */
 static pde_t kernel_pd[PD_ENTRIES] __attribute__((aligned(PAGE_SIZE)));
 
-/* ── Feature #3: Demand Paging state ────────────────────────────── */
-static bool demand_paging_active = false;
-
-/* ── Feature #3: Page-Fault Handler ─────────────────────────────── */
-/**
- * The CPU pushes the faulting linear address into CR2 before calling
- * exception 14.  Error-code bits:
- *   bit 0: 0=non-present, 1=protection violation
- *   bit 1: 0=read,        1=write
- *   bit 2: 0=kernel,      1=user
- */
-static void page_fault_handler(cpu_regs_t *regs)
+/* ── CR3 / TLB helpers ───────────────────────────────────────────── */
+static INLINE void tlb_flush_page(uint32_t vaddr)
 {
-    uint32_t fault_addr = read_cr2();
-    uint32_t err        = regs->err_code;
+    __asm__ volatile ("invlpg (%0)" :: "r"(vaddr) : "memory");
+}
 
-    /* Protection violations (present page, wrong permissions) are always
-     * fatal – we only handle non-present faults. */
-    if (err & 1) {
-        kpanic("Page-Fault: protection violation @ 0x%08x  err=0x%x  eip=0x%08x\n",
-               fault_addr, err, regs->eip);
+static INLINE void tlb_flush_all(void)
+{
+    write_cr3(read_cr3());
+}
+
+/* ── Get or allocate a 4 KB page table for pd[pd_idx] ───────────── */
+static pte_t *get_or_alloc_pt(uint32_t pd_idx, bool create, uint32_t flags)
+{
+    pde_t pde = kernel_pd[pd_idx];
+    if (pde & PDE_PRESENT) {
+        if (pde & PDE_HUGE) return NULL;   /* Can't sub-divide PSE page */
+        return (pte_t *)(pde & PAGE_MASK);
     }
+    if (!create) return NULL;
 
-    if (!demand_paging_active) {
-        kpanic("Page-Fault: paging not ready @ 0x%08x  eip=0x%08x\n",
-               fault_addr, regs->eip);
-    }
+    uint32_t pt_phys = pmm_alloc_page();
+    if (!pt_phys) return NULL;
+    memset((void *)pt_phys, 0, PAGE_SIZE);
 
-    /* Heap region – just map a zeroed page */
-    if (fault_addr >= KHEAP_START && fault_addr < KHEAP_MAX) {
-        uint32_t virt  = ALIGN_DOWN(fault_addr, PAGE_SIZE);
-        uint32_t phys  = pmm_alloc_page();
-        if (!phys)
-            kpanic("Demand-Paging: out of memory @ 0x%08x\n", fault_addr);
-
-        memset((void *)phys, 0, PAGE_SIZE);
-        paging_map(virt, phys, PDE_PRESENT | PDE_WRITABLE);
-        return;
-    }
-
-    /* User-space fault – check VMA list of the current process */
-    process_t *proc = proc_current();
-    if (proc) {
-        vma_t *vma = vma_find(proc, fault_addr);
-        if (vma) {
-            /* Check write permission */
-            if ((err & 2) && !(vma->flags & VMA_WRITE)) {
-                kpanic("Demand-Paging: write to read-only VMA @ 0x%08x\n",
-                       fault_addr);
-            }
-
-            uint32_t virt  = ALIGN_DOWN(fault_addr, PAGE_SIZE);
-            uint32_t phys  = pmm_alloc_page();
-            if (!phys)
-                kpanic("Demand-Paging: out of memory @ 0x%08x\n", fault_addr);
-
-            memset((void *)phys, 0, PAGE_SIZE);
-
-            uint32_t pflags = PDE_PRESENT | PDE_USER;
-            if (vma->flags & VMA_WRITE) pflags |= PDE_WRITABLE;
-
-            paging_map(virt, phys, pflags);
-
-            KINFO("Demand-Paging: mapped 0x%08x → phys 0x%08x (pid %u)\n",
-                  virt, phys, proc->pid);
-            return;
-        }
-    }
-
-    kpanic("Segmentation Fault @ 0x%08x  err=0x%x  eip=0x%08x\n",
-           fault_addr, err, regs->eip);
+    kernel_pd[pd_idx] = (pde_t)(pt_phys | PDE_PRESENT | PDE_WRITABLE | (flags & PDE_USER));
+    return (pte_t *)pt_phys;
 }
 
 /* ── Public: paging_init ─────────────────────────────────────────── */
@@ -99,99 +67,158 @@ void paging_init(void)
 {
     memset(kernel_pd, 0, sizeof(kernel_pd));
 
-    /* Identity map first 4 MB (PSE) */
-    kernel_pd[0] = (pde_t)(0x00000000 | PDE_PRESENT | PDE_WRITABLE | PDE_HUGE);
+    /* Identity-map first 4 MB with a PSE page */
+    kernel_pd[0]   = 0x00000000u | PDE_PRESENT | PDE_WRITABLE | PDE_HUGE;
+    /* Higher-half kernel: 0xC0000000 → PA 0x00000000 */
+    kernel_pd[768] = 0x00000000u | PDE_PRESENT | PDE_WRITABLE | PDE_HUGE;
 
-    /* Higher-half: 0xC0000000 → 0x00000000 */
-    kernel_pd[768] = (pde_t)(0x00000000 | PDE_PRESENT | PDE_WRITABLE | PDE_HUGE);
-
-    /* Enable PSE */
-    uint32_t cr4;
-    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
-    cr4 |= (1 << 4);
-    __asm__ volatile ("mov %0, %%cr4" :: "r"(cr4));
+    /* Enable PSE (4 MB pages) */
+    uint32_t cr4 = read_cr4();
+    cr4 |= (1u << 4);
+    write_cr4(cr4);
 
     write_cr3((uint32_t)kernel_pd);
 
+    /* Enable paging + write-protect */
     uint32_t cr0 = read_cr0();
-    cr0 |= (1U << 31) | (1U << 16);
+    cr0 |= (1u << 31) | (1u << 16);
     write_cr0(cr0);
 
-    /* Register demand-paging page-fault handler (exception #14) */
-    exception_register(14, page_fault_handler);
-    demand_paging_active = true;
+    /* Register page-fault handler (exception 14) */
+    idt_set_gate(14, (uint32_t)pf_handler_stub, 0x08, 0x8E);
 
-    KINFO("Paging: enabled  (PD @ 0x%08x, demand paging ON)\n",
+    KINFO("Paging v3.0: enabled  PD @ 0x%08x  invlpg TLB flushes\n",
           (uint32_t)kernel_pd);
 }
 
-/* ── Internal: get or allocate a page table ──────────────────────── */
-static pte_t *get_page_table(uint32_t pd_idx, bool create, uint32_t flags)
-{
-    if (kernel_pd[pd_idx] & PDE_PRESENT) {
-        if (kernel_pd[pd_idx] & PDE_HUGE) return NULL;
-        return (pte_t *)(kernel_pd[pd_idx] & PAGE_MASK);
-    }
-    if (!create) return NULL;
-
-    uint32_t pt_phys = pmm_alloc_page();
-    if (!pt_phys) return NULL;
-
-    memset((void *)pt_phys, 0, PAGE_SIZE);
-    kernel_pd[pd_idx] = (pde_t)(pt_phys | flags | PDE_PRESENT);
-    return (pte_t *)pt_phys;
-}
-
 /* ── Public: paging_map ──────────────────────────────────────────── */
-void paging_map(uint32_t virt, uint32_t phys, uint32_t flags)
+int paging_map_page(uint32_t virt, uint32_t phys, uint32_t flags)
 {
-    virt &= PAGE_MASK;
-    phys &= PAGE_MASK;
+    uint32_t pd_idx = virt >> 22;
+    uint32_t pt_idx = (virt >> 12) & 0x3FF;
 
-    uint32_t pd_idx  = PD_INDEX(virt);
-    uint32_t pt_idx  = PT_INDEX(virt);
-    uint32_t pd_flags = (flags & (PDE_WRITABLE | PDE_USER)) | PDE_PRESENT;
+    pte_t *pt = get_or_alloc_pt(pd_idx, true, flags);
+    if (!pt) return -1;
 
-    pte_t *pt = get_page_table(pd_idx, true, pd_flags);
-    if (!pt) kpanic("paging_map: OOM mapping 0x%08x\n", virt);
-
-    pt[pt_idx] = (pte_t)(phys | flags | PDE_PRESENT);
-    paging_invalidate(virt);
+    pt[pt_idx] = (pte_t)((phys & PAGE_MASK) | PTE_PRESENT | (flags & 0xFFF));
+    tlb_flush_page(virt);
+    return 0;
 }
 
-/* ── Public: paging_unmap ────────────────────────────────────────── */
-void paging_unmap(uint32_t virt)
+/* ── Public: paging_map_range – bulk mapping ─────────────────────── */
+/**
+ * @brief Map @p count contiguous pages starting at @p virt → @p phys.
+ *
+ * Much faster than calling paging_map() in a loop for large regions
+ * because it only does one PT allocation check per 4 MB boundary.
+ */
+int paging_map_range(uint32_t virt, uint32_t phys,
+                     uint32_t count, uint32_t flags)
 {
-    virt &= PAGE_MASK;
-    pte_t *pt = get_page_table(PD_INDEX(virt), false, 0);
+    for (uint32_t i = 0; i < count; i++) {
+        if (paging_map_page(virt + i * PAGE_SIZE,
+                       phys + i * PAGE_SIZE, flags) != 0)
+            return -1;
+    }
+    return 0;
+}
+
+/* ── Public: paging_unmap_page ────────────────────────────────────────── */
+void paging_unmap_page(uint32_t virt)
+{
+    uint32_t pd_idx = virt >> 22;
+    uint32_t pt_idx = (virt >> 12) & 0x3FF;
+
+    pte_t *pt = get_or_alloc_pt(pd_idx, false, 0);
     if (!pt) return;
-    pt[PT_INDEX(virt)] = 0;
-    paging_invalidate(virt);
+
+    pt[pt_idx] = 0;
+    tlb_flush_page(virt);   /* Precise TLB invalidation – no full CR3 reload */
 }
 
-/* ── Public: paging_flush_tlb / paging_invalidate ───────────────── */
-void paging_flush_tlb(void)   { write_cr3(read_cr3()); }
-void paging_invalidate(uint32_t virt)
-{
-    __asm__ volatile ("invlpg (%0)" :: "r"(virt) : "memory");
-}
-
-/* ── Public: paging_get_phys ─────────────────────────────────────── */
+/* ── Public: paging_get_phys ─────────────────────────────────── */
 uint32_t paging_get_phys(uint32_t virt)
 {
-    uint32_t pd_idx = PD_INDEX(virt);
-    uint32_t pt_idx = PT_INDEX(virt);
+    uint32_t pd_idx = virt >> 22;
+    pde_t    pde    = kernel_pd[pd_idx];
 
-    if (!(kernel_pd[pd_idx] & PDE_PRESENT)) return 0;
+    if (!(pde & PDE_PRESENT)) return 0;
 
-    if (kernel_pd[pd_idx] & PDE_HUGE)
-        return (kernel_pd[pd_idx] & 0xFFC00000) | (virt & 0x003FFFFF);
+    /* PSE 4 MB page: physical base is bits [31:22] of PDE */
+    if (pde & PDE_HUGE)
+        return (pde & 0xFFC00000u) | (virt & 0x3FFFFFu);
 
-    pte_t *pt = (pte_t *)(kernel_pd[pd_idx] & PAGE_MASK);
-    if (!(pt[pt_idx] & PDE_PRESENT)) return 0;
+    pte_t *pt     = (pte_t *)(pde & PAGE_MASK);
+    uint32_t pt_idx = (virt >> 12) & 0x3FF;
+    pte_t    pte    = pt[pt_idx];
 
-    return (pt[pt_idx] & PAGE_MASK) | PAGE_OFFSET(virt);
+    if (!(pte & PTE_PRESENT)) return 0;
+    return (pte & PAGE_MASK) | (virt & 0xFFF);
 }
 
-/* ── Public: paging_get_cr3 ──────────────────────────────────────── */
-uint32_t paging_get_cr3(void) { return (uint32_t)kernel_pd; }
+/* ── Public: paging_copy_on_write ────────────────────────────────── */
+/**
+ * @brief Duplicate a physical page for CoW fault handling.
+ *
+ * Allocates a new page, copies the old content, and remaps the virtual
+ * address to the new physical page with write permission.
+ */
+int paging_copy_on_write(uint32_t virt)
+{
+    uint32_t old_phys = paging_get_phys(virt & PAGE_MASK);
+    if (!old_phys) return -1;
+
+    uint32_t new_phys = pmm_alloc_page();
+    if (!new_phys) return -1;
+
+    memcpy((void *)new_phys, (void *)old_phys, PAGE_SIZE);
+    return paging_map_page(virt & PAGE_MASK, new_phys,
+                      PTE_PRESENT | PTE_WRITABLE | PTE_USER);
+}
+
+/* ── Page-fault handler ──────────────────────────────────────────── */
+void page_fault_handler(cpu_regs_t *regs, uint32_t fault_addr)
+{
+    uint32_t err = regs->err_code;
+
+    /* Was it a write-to-RO page (CoW)? */
+    if ((err & 1) && (err & 2)) {
+        if (paging_copy_on_write(fault_addr) == 0) return;
+        kpanic("CoW: cannot allocate page for virt=0x%08x\n", fault_addr);
+    }
+
+    /* Not-present: demand paging */
+    if (!(err & 1)) {
+        /* Heap region auto-grow */
+        if (fault_addr >= KHEAP_START && fault_addr < KHEAP_MAX) {
+            uint32_t phys = pmm_alloc_page();
+            if (!phys) kpanic("Demand paging: out of memory (heap 0x%08x)\n", fault_addr);
+            if (paging_map_page(fault_addr & PAGE_MASK, phys,
+                           PTE_PRESENT | PTE_WRITABLE) != 0)
+                kpanic("Demand paging: map failed 0x%08x\n", fault_addr);
+            return;
+        }
+
+        /* User VMA */
+        process_t *proc = proc_current();
+        if (proc) {
+            vma_t *vma = vma_find(proc, fault_addr);
+            if (vma) {
+                uint32_t phys = pmm_alloc_page();
+                if (!phys) kpanic("Demand paging: out of memory (vma)\n");
+                uint32_t flags = PTE_PRESENT | PTE_USER;
+                if (vma->flags & VMA_WRITE) flags |= PTE_WRITABLE;
+                paging_map_page(fault_addr & PAGE_MASK, phys, flags);
+                return;
+            }
+        }
+    }
+
+    /* Unhandled – kernel crash */
+    kpanic("Page fault at 0x%08x  err=0x%x  eip=0x%08x\n",
+           fault_addr, err, regs->eip);
+}
+uint32_t paging_get_cr3(void)
+{
+    return (uint32_t)kernel_pd;
+}

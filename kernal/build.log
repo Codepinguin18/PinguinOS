@@ -1,2 +1,56 @@
+  AS    boot.S
+  AS    cpu/isr.S
+  CC    kernel.c
   CC    klib.c
+  CC    entropy.c
+  CC    cpu/gdt.c
+  CC    cpu/idt.c
+  CC    cpu/cpu.c
+  CC    cpu/ssp.c
+  CC    mm/phys_alloc.c
+  CC    mm/paging.c
+  CC    mm/heap.c
+  CC    mm/slab.c
+  CC    mm/process.c
+  CC    mm/shmem.c
+  CC    drivers/vga.c
+  CC    drivers/serial.c
+  CC    drivers/pci.c
+  CC    drivers/keyboard.c
+  CC    drivers/rtc.c
+  CC    drivers/acpi.c
+  CC    drivers/ide.c
+  CC    drivers/bga.c
+  CC    drivers/mouse.c
+  CC    drivers/watchdog.c
+  CC    drivers/e1000.c
+  CC    sched/scheduler.c
+sched/scheduler.c:82:13: warning: ‘bitmap_rebuild’ defined but not used [-Wunused-function]
+   82 | static void bitmap_rebuild(void)
+      |             ^~~~~~~~~~~~~~
+  CC    sync/sync.c
+  CC    fs/vfs.c
+  CC    fs/ramfs.c
+  CC    fs/devfs.c
+  CC    fs/fat32.c
+  CC    fs/partition.c
+  CC    fs/procfs.c
+  CC    fs/pagecache.c
+  CC    fs/iso9660.c
+  CC    net/net.c
+  CC    net/dhcp.c
+  CC    net/dns.c
+  CC    net/loopback.c
+  CC    net/tcp.c
+  CC    ipc/syscall.c
+  CC    ipc/env.c
+  CC    ipc/pipe.c
+  CC    ipc/msgqueue.c
+  CC    debug/debug_shell.c
+  CC    debug/kprobes.c
   LD    build/kernel.elf
+i686-linux-gnu-ld: build/mm/paging.o: in function `paging_init':
+paging.c:(.text+0x4c): undefined reference to `pf_handler_stub'
+i686-linux-gnu-ld: build/mm/process.o: in function `proc_fork':
+process.c:(.text+0x61a): undefined reference to `paging_get_cr3'
+make: *** [Makefile:48: build/kernel.elf] Error 1

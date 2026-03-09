@@ -1,81 +1,57 @@
 /**
  * @file klib.h
- * @brief Minimale freistehende String- und Speicherhilfen für PinguinOS.
- *
- * Da wir mit -ffreestanding kompilieren und nicht gegen eine libc linken,
- * stellen wir unsere eigenen kleinen Implementierungen der üblichsten Libc-Helfer bereit.
+ * @brief Kernel string, memory and formatting utilities – PinguinOS v3.0.
  */
 #ifndef _KLIB_H
 #define _KLIB_H
 
 #include "types.h"
 
-/* ── Speicher (Memory) ───────────────────────────────────────────── */
-
-/** Füllt @p n Bytes ab @p s mit dem Wert @p c. */
-void *memset(void *s, int c, size_t n);
-
-/** Kopiert @p n Bytes von @p src nach @p dst (Bereiche dürfen sich nicht überlappen). */
-void *memcpy(void *dst, const void *src, size_t n);
-
-/** Kopiert @p n Bytes, wobei sich überlappende Bereiche korrekt behandelt werden. */
-void *memmove(void *dst, const void *src, size_t n);
-
-/** Vergleicht die ersten @p n Bytes von @p a und @p b; liefert <0, 0, oder >0. */
-int   memcmp(const void *a, const void *b, size_t n);
+/* ── Memory ──────────────────────────────────────────────────────── */
+void    *memset  (void *s, int c, size_t n);
+void    *memcpy  (void *dst, const void *src, size_t n);
+void    *memmove (void *dst, const void *src, size_t n);
+int      memcmp  (const void *a, const void *b, size_t n);
 
 /* ── Strings ─────────────────────────────────────────────────────── */
+size_t   strlen  (const char *s);
+char    *strcpy  (char *dst, const char *src);
+char    *strncpy (char *dst, const char *src, size_t n);
+char    *strcat  (char *dst, const char *src);
+char    *strncat (char *dst, const char *src, size_t n);
+int      strcmp  (const char *a, const char *b);
+int      strncmp (const char *a, const char *b, size_t n);
+char    *strchr  (const char *s, int c);
+char    *strrchr (const char *s, int c);
+char    *strstr  (const char *haystack, const char *needle);
+char    *strrev  (char *s);
+char    *strdup  (const char *s);   /* heap-allocated; caller kfree()s */
 
-/** Liefert die Länge des null-terminierten Strings @p s. */
-size_t strlen(const char *s);
+/** Zero-allocation tokeniser.  Modifies *str in place. */
+char    *strsplit_next(char **str, char delim);
 
-/** Kopiert String @p src nach @p dst; dst muss genug Platz für src + NUL bieten. */
-char  *strcpy(char *dst, const char *src);
+/* ── Number parsing ──────────────────────────────────────────────── */
+uint32_t strtoul (const char *str, char **endptr, int base);
+int32_t  strtol  (const char *str, char **endptr, int base);
 
-/** Kopiert maximal @p n Bytes von @p src nach @p dst; terminiert immer mit NUL. */
-char  *strncpy(char *dst, const char *src, size_t n);
-
-/** Hängt @p src an @p dst an. */
-char  *strcat(char *dst, const char *src);
-
-/** Vergleicht zwei Strings; liefert <0, 0, oder >0. */
-int    strcmp(const char *a, const char *b);
-
-/** Vergleicht maximal @p n Zeichen. */
-int    strncmp(const char *a, const char *b, size_t n);
-
-/** Findet das erste Vorkommen von @p c in @p s, oder NULL. */
-char  *strchr(const char *s, int c);
-
-/** Kehrt einen String an Ort und Stelle um; liefert @p s. */
-char  *strrev(char *s);
-
-/* ── Zahlenformatierung ──────────────────────────────────────────── */
-
-/**
- * @brief Wandelt eine vorzeichenlose Ganzzahl @p val in einen String zur gegebenen Basis um.
- * @param buf   Ausgabepuffer (muss groß genug sein).
- * @param val   Zu konvertierender Wert.
- * @param base  Zahlenbasis (2–36).
- * @param upper Verwende Großbuchstaben für Hex-Ziffern.
- * @return Anzahl der geschriebenen Zeichen (ohne NUL).
- */
+/* ── Number formatting ───────────────────────────────────────────── */
 int uitoa(char *buf, uint32_t val, int base, bool upper);
+int itoa (char *buf, int32_t  val);
 
-/** Wandelt eine vorzeichenbehaftete Ganzzahl in einen Dezimal-String um. */
-int itoa(char *buf, int32_t val);
-
-/**
- * @brief Minimale vsnprintf-Implementierung.
- *
- * Unterstützte Spezifizierer: %c, %s, %d, %i, %u, %x, %X, %p, %%.
- * Unterstützt Breite und Null-Padding (z.B. %08x).
- *
- * @return Anzahl der Zeichen, die geschrieben worden wären (ohne Null-Terminator).
- */
+/* ── Printf-family ───────────────────────────────────────────────── */
 int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap);
+int snprintf (char *buf, size_t size, const char *fmt, ...);
 
-/** Wrapper um vsnprintf. */
-int snprintf(char *buf, size_t size, const char *fmt, ...);
+/* ── Checksums ───────────────────────────────────────────────────── */
+/** One's-complement 16-bit internet checksum (RFC 1071). */
+uint16_t klib_checksum16(const void *data, size_t len);
+/** Simple byte sum. */
+uint8_t  klib_checksum8 (const void *data, size_t len);
+
+/* ── 64-bit math helpers (GCC freestanding requirement) ──────────── */
+uint64_t __udivdi3(uint64_t n, uint64_t d);
+uint64_t __umoddi3(uint64_t n, uint64_t d);
+int64_t  __divdi3 (int64_t n,  int64_t d);
+int64_t  __moddi3 (int64_t n,  int64_t d);
 
 #endif /* _KLIB_H */

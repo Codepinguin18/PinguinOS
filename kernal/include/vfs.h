@@ -102,6 +102,9 @@ struct vfs_mount {
 /** VFS-System initialisieren. */
 void vfs_init(void);
 
+/** DevFS initialisieren. */
+void devfs_init(void);
+
 /** Dateisystem registrieren. */
 void vfs_register_fs(fs_ops_t *ops);
 
@@ -143,5 +146,6 @@ extern fs_ops_t fat32_ops;
 extern fs_ops_t ext2_ops;
 extern fs_ops_t devfs_ops;
 extern fs_ops_t procfs_ops;
+extern fs_ops_t iso9660_ops;
 
 #endif /* _VFS_H */

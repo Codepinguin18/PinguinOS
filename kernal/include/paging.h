@@ -28,6 +28,11 @@
 #define PDE_HUGE       (1 << 7)   /* 4 MB page (PDEs only)            */
 #define PDE_GLOBAL     (1 << 8)   /* Don't flush from TLB on cr3 load */
 
+/* PTE alias for clarity */
+#define PTE_PRESENT    PDE_PRESENT
+#define PTE_WRITABLE   PDE_WRITABLE
+#define PTE_USER       PDE_USER
+
 /* Number of entries in a page directory / page table */
 #define PD_ENTRIES   1024
 #define PT_ENTRIES   1024
@@ -63,14 +68,20 @@ void paging_init(void);
  * @param virt   Virtual address (page-aligned).
  * @param phys   Physical address (page-aligned).
  * @param flags  Combination of PDE_* flags.
+ * @return 0 on success, -1 on failure.
  */
-void paging_map(uint32_t virt, uint32_t phys, uint32_t flags);
+int paging_map_page(uint32_t virt, uint32_t phys, uint32_t flags);
+
+/**
+ * @brief Duplicate a physical page for CoW fault handling.
+ */
+int paging_copy_on_write(uint32_t virt);
 
 /**
  * @brief Unmap a single virtual page.
  * @param virt  Virtual address (page-aligned).
  */
-void paging_unmap(uint32_t virt);
+void paging_unmap_page(uint32_t virt);
 
 /**
  * @brief Flush the entire TLB by reloading CR3.

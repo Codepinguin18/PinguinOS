@@ -92,7 +92,7 @@ static bool heap_grow(size_t needed)
         if (heap_brk + PAGE_SIZE > KHEAP_MAX) return false;
         uint32_t phys = pmm_alloc_page();
         if (!phys) return false;
-        paging_map(heap_brk, phys, PDE_PRESENT | PDE_WRITABLE);
+        paging_map_page(heap_brk, phys, PDE_PRESENT | PDE_WRITABLE);
         heap_brk    += PAGE_SIZE;
         total_bytes += PAGE_SIZE;
     }

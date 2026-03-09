@@ -116,7 +116,7 @@ static uint64_t hpet_period_fs = 0;   /* Periode in Femtosekunden */
 void hpet_init(uint32_t base_phys)
 {
     /* HPET-MMIO in den Kernel-Adressraum mappen */
-    paging_map(base_phys, base_phys, PDE_PRESENT | PDE_WRITABLE | PDE_NOCACHE);
+    paging_map_page(base_phys, base_phys, PDE_PRESENT | PDE_WRITABLE | PDE_NOCACHE);
     hpet_base = (volatile uint64_t *)base_phys;
 
     uint64_t caps     = HPET_REG(HPET_REG_CAPS);

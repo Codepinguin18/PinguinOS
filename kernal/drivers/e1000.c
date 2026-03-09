@@ -213,7 +213,7 @@ bool e1000_init(void)
     uint32_t mmio_phys = dev->bar[0] & ~0xFu;
     uint32_t mmio_size = 0x20000;   /* 128 KB */
     for (uint32_t i = 0; i < mmio_size; i += PAGE_SIZE) {
-        paging_map(mmio_phys + i, mmio_phys + i,
+        paging_map_page(mmio_phys + i, mmio_phys + i,
                    PDE_PRESENT | PDE_WRITABLE | PDE_NOCACHE);
     }
     e1000_mmio = (volatile uint32_t *)mmio_phys;

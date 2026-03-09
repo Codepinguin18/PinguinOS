@@ -174,8 +174,8 @@ int elf32_load(const uint8_t *elf_data, uint32_t elf_size,
         for (uint32_t p = 0; p < pages; p++) {
             uint32_t phys = pmm_alloc_page();
             if (!phys) return -5;
-            paging_map(vaddr + p * PAGE_SIZE, phys,
-                       PDE_PRESENT | PDE_WRITABLE | PDE_USER);
+            paging_map_page(vaddr + p * PAGE_SIZE, phys,
+                        PDE_PRESENT | PDE_WRITABLE | PDE_USER);
         }
 
         /* Daten kopieren */

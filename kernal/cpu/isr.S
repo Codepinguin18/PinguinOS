@@ -52,6 +52,8 @@ ISR_ERR   11    /* #NP Segment Not Present                      */
 ISR_ERR   12    /* #SS Stack-Segment Fault                      */
 ISR_ERR   13    /* #GP General Protection Fault                 */
 ISR_ERR   14    /* #PF Page Fault                               */
+.global pf_handler_stub
+pf_handler_stub = isr14
 ISR_NOERR 15    /* Reserved                                     */
 ISR_NOERR 16    /* #MF x87 Floating-Point Exception             */
 ISR_ERR   17    /* #AC Alignment Check                          */

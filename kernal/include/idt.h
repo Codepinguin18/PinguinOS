@@ -87,6 +87,7 @@ typedef void (*irq_handler_t)(cpu_regs_t *regs);
  * @brief Initialise and load the IDT, remap the PIC.
  */
 void idt_init(void);
+void idt_set_gate(uint8_t vector, uint32_t base, uint16_t sel, uint8_t flags);
 
 /**
  * @brief Register a handler for a hardware IRQ line (0–15).

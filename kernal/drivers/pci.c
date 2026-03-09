@@ -1,6 +1,9 @@
 /**
  * @file pci.c
- * @brief PCI bus enumeration for PinguinOS.
+ * @brief PCI-Bus-Enumeration für PinguinOS.
+ *
+ * Implementiert die vollständige PCI-Enumeration über den Type-1-
+ * Konfigurationsmechanismus sowie Hilfsfunktionen für Treiber.
  */
 
 #include "../include/pci.h"
@@ -8,11 +11,11 @@
 #include "../include/serial.h"
 #include "../include/klib.h"
 
-/* ── Device table ────────────────────────────────────────────────── */
+/* ── Gerätetabelle ───────────────────────────────────────────────── */
 static pci_device_t devices[PCI_MAX_DEVICES];
 static uint32_t     device_count = 0;
 
-/* ── Configuration space access ──────────────────────────────────── */
+/* ── Konfigurationsraum-Zugriff ──────────────────────────────────── */
 uint32_t pci_read32(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg)
 {
     uint32_t addr = (1U << 31)
@@ -47,7 +50,28 @@ void pci_write32(uint8_t bus, uint8_t dev, uint8_t func, uint8_t reg, uint32_t v
     outl(PCI_CFG_DATA, val);
 }
 
-/* ── Enumerate one function ──────────────────────────────────────── */
+/**
+ * @brief Bus-Mastering für das angegebene PCI-Gerät aktivieren.
+ *
+ * Liest das Command-Register, setzt Bit 2 (Bus Master Enable) und
+ * schreibt den neuen Wert zurück.  DMA-fähige Geräte (NIC, AHCI, NVMe)
+ * müssen diese Funktion vor dem ersten DMA-Transfer aufrufen.
+ */
+void pci_enable_bus_master(pci_device_t *dev)
+{
+    uint16_t cmd = pci_read16(dev->bus, dev->device, dev->function,
+                              PCI_REG_COMMAND);
+    /* Bus Master Enable (Bit 2) setzen, falls noch nicht gesetzt */
+    if (!(cmd & PCI_CMD_BUS_MASTER)) {
+        cmd |= PCI_CMD_BUS_MASTER;
+        pci_write32(dev->bus, dev->device, dev->function,
+                    PCI_REG_COMMAND, (uint32_t)cmd);
+        KINFO("PCI: Bus-Mastering für %04x:%04x aktiviert\n",
+              dev->vendor_id, dev->device_id);
+    }
+}
+
+/* ── Eine Funktion enumerieren ───────────────────────────────────── */
 static void pci_check_function(uint8_t bus, uint8_t dev, uint8_t func)
 {
     uint16_t vendor = pci_read16(bus, dev, func, PCI_REG_VENDOR_ID);
@@ -72,7 +96,7 @@ static void pci_check_function(uint8_t bus, uint8_t dev, uint8_t func)
         d->bar[i] = pci_read32(bus, dev, func, PCI_REG_BAR0 + i * 4);
 }
 
-/* ── Public: pci_init ────────────────────────────────────────────── */
+/* ── Öffentlich: pci_init ────────────────────────────────────────── */
 void pci_init(void)
 {
     device_count = 0;
@@ -80,11 +104,13 @@ void pci_init(void)
 
     for (uint32_t bus = 0; bus < PCI_MAX_BUS; bus++) {
         for (uint32_t dev = 0; dev < PCI_MAX_DEVICE; dev++) {
-            uint16_t vendor = pci_read16((uint8_t)bus, (uint8_t)dev, 0, PCI_REG_VENDOR_ID);
+            uint16_t vendor = pci_read16((uint8_t)bus, (uint8_t)dev, 0,
+                                         PCI_REG_VENDOR_ID);
             if (vendor == PCI_VENDOR_NONE) continue;
 
-            /* Check if multi-function */
-            uint8_t htype = pci_read8((uint8_t)bus, (uint8_t)dev, 0, PCI_REG_HEADER_TYPE);
+            /* Prüfen ob Multifunktions-Gerät */
+            uint8_t htype   = pci_read8((uint8_t)bus, (uint8_t)dev, 0,
+                                         PCI_REG_HEADER_TYPE);
             uint8_t max_func = (htype & 0x80) ? PCI_MAX_FUNCTION : 1;
 
             for (uint8_t func = 0; func < max_func; func++)
@@ -92,14 +118,15 @@ void pci_init(void)
         }
     }
 
-    KINFO("PCI: found %u device(s)\n", device_count);
+    KINFO("PCI: %u Gerät(e) gefunden\n", device_count);
 }
 
-/* ── Lookup helpers ──────────────────────────────────────────────── */
+/* ── Such-Hilfsfunktionen ────────────────────────────────────────── */
 pci_device_t *pci_find_class(uint8_t class_code, uint8_t subclass)
 {
     for (uint32_t i = 0; i < device_count; i++)
-        if (devices[i].class_code == class_code && devices[i].subclass == subclass)
+        if (devices[i].class_code == class_code &&
+            devices[i].subclass   == subclass)
             return &devices[i];
     return NULL;
 }
@@ -107,7 +134,8 @@ pci_device_t *pci_find_class(uint8_t class_code, uint8_t subclass)
 pci_device_t *pci_find_device(uint16_t vendor, uint16_t device_id)
 {
     for (uint32_t i = 0; i < device_count; i++)
-        if (devices[i].vendor_id == vendor && devices[i].device_id == device_id)
+        if (devices[i].vendor_id == vendor &&
+            devices[i].device_id == device_id)
             return &devices[i];
     return NULL;
 }
@@ -117,10 +145,10 @@ uint32_t            pci_device_count(void) { return device_count; }
 
 void pci_dump(void)
 {
-    KINFO("PCI device list (%u entries):\n", device_count);
+    KINFO("PCI-Geräteliste (%u Einträge):\n", device_count);
     for (uint32_t i = 0; i < device_count; i++) {
         pci_device_t *d = &devices[i];
-        KINFO("  [%02x:%02x.%x] %04x:%04x  class %02x.%02x  IRQ %u\n",
+        KINFO("  [%02x:%02x.%x] %04x:%04x  Klasse %02x.%02x  IRQ %u\n",
               d->bus, d->device, d->function,
               d->vendor_id, d->device_id,
               d->class_code, d->subclass,

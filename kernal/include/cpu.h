@@ -145,6 +145,12 @@ static INLINE uint32_t read_cr3(void) {
 static INLINE void write_cr3(uint32_t v) {
     __asm__ volatile ("mov %0, %%cr3" :: "r"(v) : "memory");
 }
+static INLINE uint32_t read_cr4(void) {
+    uint32_t v; __asm__ volatile ("mov %%cr4, %0" : "=r"(v)); return v;
+}
+static INLINE void write_cr4(uint32_t v) {
+    __asm__ volatile ("mov %0, %%cr4" :: "r"(v));
+}
 
 /* ── Kernel panic ────────────────────────────────────────────────── */
 /**

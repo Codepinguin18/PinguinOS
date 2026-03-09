@@ -110,7 +110,7 @@ bool bga_set_mode(uint16_t width, uint16_t height, uint16_t bpp)
     uint32_t pages = (BGA_FB_MAP_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
     for (uint32_t i = 0; i < pages; i++) {
         uint32_t off = i * PAGE_SIZE;
-        paging_map(BGA_FRAMEBUFFER_VIRT + off,
+        paging_map_page(BGA_FRAMEBUFFER_VIRT + off,
                    BGA_FRAMEBUFFER_PHYS + off,
                    PDE_PRESENT | PDE_WRITABLE | PDE_NOCACHE);
     }
