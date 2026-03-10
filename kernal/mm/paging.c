@@ -67,10 +67,38 @@ void paging_init(void)
 {
     memset(kernel_pd, 0, sizeof(kernel_pd));
 
-    /* Identity-map first 4 MB with a PSE page */
-    kernel_pd[0]   = 0x00000000u | PDE_PRESENT | PDE_WRITABLE | PDE_HUGE;
-    /* Higher-half kernel: 0xC0000000 → PA 0x00000000 */
-    kernel_pd[768] = 0x00000000u | PDE_PRESENT | PDE_WRITABLE | PDE_HUGE;
+    /*
+     * Identity-map the full 32-bit physical address space in chunks:
+     *
+     *  PDE[0..63]   → PA 0x00000000–0x0FFFFFFF  (256 MB, RAM + ACPI tables)
+     *    QEMU places ACPI/RSDT near the top of RAM (~0x0FFExxxx for 256 MB),
+     *    so we need all 256 MB mapped before any driver touches those regions.
+     *
+     *  PDE[240..255] → PA 0xF0000000–0xFFFFFFFF  (256 MB, MMIO / ROM / PCI BARs)
+     *    Covers the VGA framebuffer (0xA0000), PCI MMIO BARs, BIOS ROM (0xF0000),
+     *    and any MMIO-mapped PCI device (e.g. BGA at 0xE0000000).
+     *
+     * Each PSE page covers 4 MB (CR4.PSE must be set before write_cr0 enables paging).
+     */
+
+    /* 0–256 MB: RAM + ACPI tables */
+    for (uint32_t i = 0; i < 64; i++)
+        kernel_pd[i] = (pde_t)((i * 0x400000u) | PDE_PRESENT | PDE_WRITABLE | PDE_HUGE);
+
+    /* 0xE0000000–0xEFFFFFFF: BGA / Bochs VBE Framebuffer (PDE[224..239])
+     * QEMU stdvga maps the linear framebuffer here.
+     * PDE_NOCACHE ensures framebuffer writes are immediately visible to QEMU
+     * (bypasses CPU write-back cache for this MMIO region). */
+    for (uint32_t i = 224; i < 240; i++)
+        kernel_pd[i] = (pde_t)((i * 0x400000u) | PDE_PRESENT | PDE_WRITABLE | PDE_HUGE | PDE_NOCACHE);
+
+    /* 0xF0000000–0xFFFFFFFF: MMIO / ROM / PCI BARs */
+    for (uint32_t i = 240; i < 256; i++)
+        kernel_pd[i] = (pde_t)((i * 0x400000u) | PDE_PRESENT | PDE_WRITABLE | PDE_HUGE | PDE_NOCACHE);
+
+    /* Higher-half mirror: 0xC0000000–0xCFFFFFFF → PA 0x00000000–0x0FFFFFFF */
+    for (uint32_t i = 0; i < 64; i++)
+        kernel_pd[768 + i] = (pde_t)((i * 0x400000u) | PDE_PRESENT | PDE_WRITABLE | PDE_HUGE);
 
     /* Enable PSE (4 MB pages) */
     uint32_t cr4 = read_cr4();
@@ -87,7 +115,7 @@ void paging_init(void)
     /* Register page-fault handler (exception 14) */
     idt_set_gate(14, (uint32_t)pf_handler_stub, 0x08, 0x8E);
 
-    KINFO("Paging v3.0: enabled  PD @ 0x%08x  invlpg TLB flushes\n",
+    KINFO("Paging v3.0: enabled  PD @ 0x%08x  256 MB RAM + BGA + MMIO\n",
           (uint32_t)kernel_pd);
 }
 

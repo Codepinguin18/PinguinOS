@@ -1,5 +1,5 @@
 # PinguinOS
-Version 1.0
+Version 2.0
 
 ## Kernal
-Version 2.3
+Version 2.3.1

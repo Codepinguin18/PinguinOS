@@ -15,6 +15,7 @@
 #include "../include/serial.h"
 #include "../include/klib.h"
 #include "../include/gdt.h"
+#include "../include/apic.h"    /* apic_eoi() – needed for APIC timer EOI */
 
 /* ── Externe Assembler-Stub-Tabelle (isr.S) ─────────────────────── */
 extern void isr0(void);  extern void isr1(void);  extern void isr2(void);
@@ -170,18 +171,22 @@ void irq_unmask(uint8_t irq)
 {
     uint16_t port;
     uint8_t  value;
+    bool     is_slave = (irq >= 8);
 
-    if (irq < 8) {
-        port  = PIC1_DATA;
+    if (!is_slave) {
+        port = PIC1_DATA;
     } else {
-        port  = PIC2_DATA;
-        irq  -= 8;
+        port = PIC2_DATA;
+        irq -= 8;   /* Slave-Bit-Position berechnen */
     }
     value = inb(port) & (uint8_t)(~(1 << irq));
     outb(port, value);
-    /* Cascade-Leitung immer freigeben, wenn ein Slave-IRQ de-maskiert wird */
-    if (irq >= 8) {
-        value = inb(PIC1_DATA) & ~(1 << IRQ_CASCADE);
+
+    /* Cascade-Leitung (IRQ2) MUSS frei sein wenn ein Slave-IRQ aktiv ist.
+     * Bug-Fix: is_slave wird vor irq -= 8 gespeichert, sonst ist
+     * irq >= 8 nach der Subtraktion immer false! */
+    if (is_slave) {
+        value = inb(PIC1_DATA) & (uint8_t)(~(1 << IRQ_CASCADE));
         outb(PIC1_DATA, value);
     }
 }
@@ -234,6 +239,13 @@ void isr_dispatch(cpu_regs_t *regs)
         if (irq_handlers[irq])
             irq_handlers[irq](regs);
 
+        /* APIC EOI MUST come before PIC EOI.
+         * The APIC timer fires on vector 0x20. Without apic_eoi() its
+         * in-service bit stays set, which raises the processor's PPR to
+         * class 2 and blocks ALL subsequent interrupts at priority ≤ 0x2F
+         * – including the keyboard (vector 0x21) and mouse (vector 0x2C).
+         * apic_eoi() is a no-op when the APIC is not active. */
+        apic_eoi();
         pic_send_eoi(irq);
     }
 }

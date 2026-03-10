@@ -19,6 +19,7 @@
 #include "../include/cpu.h"
 #include "../include/serial.h"
 #include "../include/klib.h"
+#include "../include/pci.h"
 
 /* ── BGA I/O registers ───────────────────────────────────────────── */
 #define BGA_IOPORT_INDEX  0x01CE
@@ -42,9 +43,12 @@
 #define VBE_DISPI_LFB_ENABLED      0x40   /* Linear framebuffer */
 #define VBE_DISPI_NOCLEARMEM       0x80
 
-/* Physical address of the BGA linear framebuffer (QEMU default) */
-#define BGA_FRAMEBUFFER_PHYS  0xE0000000u
-#define BGA_FRAMEBUFFER_VIRT  0xE0000000u   /* Identity-mapped */
+/* Physical address of the BGA linear framebuffer – probed from PCI BAR 0 */
+/* Fallback to QEMU default if PCI probe fails */
+#define BGA_FRAMEBUFFER_PHYS_DEFAULT  0xE0000000u
+
+static uint32_t bga_fb_phys = BGA_FRAMEBUFFER_PHYS_DEFAULT;  /* set by bga_probe_bar() */
+#define BGA_FRAMEBUFFER_VIRT  bga_fb_phys   /* identity-mapped */
 
 /* Maximum framebuffer size to map: 8 MB */
 #define BGA_FB_MAP_SIZE  (8u * 1024u * 1024u)
@@ -56,7 +60,56 @@ static uint16_t  bga_bpp_val = 0;
 static bool      bga_active  = false;
 static void     *fb_ptr      = NULL;
 
-/* ── Register helpers ────────────────────────────────────────────── */
+/* ── PCI BAR probe ───────────────────────────────────────────────── */
+/**
+ * Finds the VGA/display PCI device (class 0x03) and reads BAR 0 to get
+ * the actual linear framebuffer physical address.  Falls back to the
+ * QEMU default (0xE0000000) if no device is found.
+ */
+static void bga_probe_bar(void)
+{
+    /* Try VGA-compatible (class=0x03, sub=0x00) then any display device */
+    pci_device_t *vga = pci_find_class(PCI_CLASS_DISPLAY, 0x00);
+    if (!vga) vga = pci_find_class(PCI_CLASS_DISPLAY, 0x80);
+    if (!vga) {
+        KINFO("BGA: PCI VGA device not found – using default 0x%08x\n",
+              BGA_FRAMEBUFFER_PHYS_DEFAULT);
+        bga_fb_phys = BGA_FRAMEBUFFER_PHYS_DEFAULT;
+        return;
+    }
+
+    /* BAR 0: mask out type/flag bits for memory BAR */
+    uint32_t bar0 = vga->bar[0];
+    uint32_t addr = bar0 & 0xFFFFFFF0u;   /* mask low 4 bits (type/flags) */
+
+    KINFO("BGA: PCI VGA %04x:%04x at %02x:%02x.%x  BAR0=0x%08x  addr=0x%08x\n",
+          vga->vendor_id, vga->device_id,
+          vga->bus, vga->device, vga->function,
+          bar0, addr);
+
+    if (addr == 0 || addr == 0xFFFFFFF0u) {
+        /* BAR not configured yet – use default */
+        bga_fb_phys = BGA_FRAMEBUFFER_PHYS_DEFAULT;
+        KINFO("BGA: BAR0 unconfigured – using default 0x%08x\n",
+              BGA_FRAMEBUFFER_PHYS_DEFAULT);
+    } else {
+        bga_fb_phys = addr;
+    }
+
+    /* Ensure the framebuffer region is accessible – map it if needed.
+     * paging_map_page() silently ignores PSE-already-mapped regions. */
+    uint32_t pages = (BGA_FB_MAP_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
+    for (uint32_t i = 0; i < pages; i++) {
+        uint32_t off = i * PAGE_SIZE;
+        paging_map_page(bga_fb_phys + off, bga_fb_phys + off,
+                        PDE_PRESENT | PDE_WRITABLE | PDE_NOCACHE);
+    }
+
+    KINFO("BGA: framebuffer mapped at phys=0x%08x (%u pages)\n",
+          bga_fb_phys, pages);
+}
+
+
 static void bga_write(uint16_t idx, uint16_t val)
 {
     outw(BGA_IOPORT_INDEX, idx);
@@ -90,6 +143,9 @@ bool bga_set_mode(uint16_t width, uint16_t height, uint16_t bpp)
     /* Only 32 bpp supported by this driver for simplicity */
     if (bpp != 32 && bpp != 24 && bpp != 16 && bpp != 8) return false;
 
+    /* Probe the real framebuffer address from PCI BAR 0 */
+    bga_probe_bar();
+
     /* Disable VBE before changing parameters */
     bga_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
 
@@ -99,26 +155,17 @@ bool bga_set_mode(uint16_t width, uint16_t height, uint16_t bpp)
 
     /* Enable with linear framebuffer, don't clear memory */
     bga_write(VBE_DISPI_INDEX_ENABLE,
-              VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
+              VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED | VBE_DISPI_NOCLEARMEM);
 
     bga_width   = width;
     bga_height  = height;
     bga_bpp_val = bpp;
     bga_active  = true;
 
-    /* Map the framebuffer into kernel virtual address space */
-    uint32_t pages = (BGA_FB_MAP_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
-    for (uint32_t i = 0; i < pages; i++) {
-        uint32_t off = i * PAGE_SIZE;
-        paging_map_page(BGA_FRAMEBUFFER_VIRT + off,
-                   BGA_FRAMEBUFFER_PHYS + off,
-                   PDE_PRESENT | PDE_WRITABLE | PDE_NOCACHE);
-    }
-
-    fb_ptr = (void *)BGA_FRAMEBUFFER_VIRT;
+    fb_ptr = (void *)bga_fb_phys;
 
     KINFO("BGA: mode set  %ux%u @ %ubpp  fb=0x%08x\n",
-          width, height, bpp, BGA_FRAMEBUFFER_VIRT);
+          width, height, bpp, bga_fb_phys);
     return true;
 }
 

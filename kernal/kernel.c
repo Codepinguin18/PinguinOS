@@ -89,6 +89,8 @@
 #include "include/env.h"
 #include "include/shmem.h"
 #include "include/msgqueue.h"
+/* PinguinOS Desktop-Umgebung */
+#include "../os/include/pinguinos.h"
 
 /* ── Kernel-Version ──────────────────────────────────────────────── */
 #define KERNEL_VERSION  "2.3"
@@ -408,7 +410,7 @@ void cmain(uint32_t magic, multiboot_info_t *mbi)
 
     /* ── Schritt 28: BGA-Grafik (optional) ──────────────────────── */
     if (bga_detect()) {
-        bga_set_mode(1024, 768, 32);
+        bga_set_mode(1280, 720, 32);
         bga_clear(0x001B2A3C);   /* Dunkles PinguinOS-Blau */
         vga_printf("  [*] %-22s OK  (1024×768×32bpp)\n", "BGA-Grafik");
     }
@@ -430,6 +432,9 @@ void cmain(uint32_t magic, multiboot_info_t *mbi)
     /* Watchdog scharf stellen und Interrupts freigeben */
     watchdog_enable();
     sti();
+
+    /* ── PinguinOS Desktop-Umgebung starten ──────────────────────── */
+    pinguinos_main();   /* Login → Desktop (kehrt nur bei Shutdown zurück) */
 
     /* Idle-Schleife – der PIT-IRQ treibt den Scheduler */
     for (;;) hlt();
