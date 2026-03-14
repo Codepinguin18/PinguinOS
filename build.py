@@ -73,8 +73,7 @@ QEMU_FLAGS = [
     "-no-reboot",
     "-boot",   "d",             # Von CD-ROM booten (verhindert iPXE/Netzwerk-Boot)
     "-cdrom",  ISO_FILE,
-    # USB-Tablet: absolute Maus-Koordinaten → QEMU greift Maus NICHT mehr
-    # Kein Ctrl+Alt+G nötig, Klicks funktionieren direkt im Fenster
+    # USB-Tablet: absolute Maus-Koordinaten (kein Grab nötig)
     "-usb",
     "-device", "usb-tablet",
 ]
@@ -231,6 +230,7 @@ def _kernel_sources():
         "drivers/vga.c", "drivers/serial.c", "drivers/pci.c",
         "drivers/keyboard.c", "drivers/rtc.c", "drivers/acpi.c",
         "drivers/ide.c", "drivers/bga.c", "drivers/mouse.c",
+        "drivers/vmmouse.c",
         "drivers/watchdog.c", "drivers/e1000.c",
         "drivers/apic.c", "drivers/rtl8139.c",
         "drivers/ahci.c",
@@ -253,6 +253,8 @@ def _kernel_sources():
         "debug/debug_shell.c", "debug/kprobes.c",
         "debug/gdbstub.c", "debug/crashdump.c",
         "debug/profiler.c",
+        # PE/EXE-Loader
+        "fs/pe.c",
     ]
 
     c_srcs = []
@@ -270,7 +272,7 @@ def _kernel_sources():
 def _os_sources():
     """Gibt alle (src, obj) Paare des OS zurück."""
     B = os.path.join(BUILD, "os")
-    srcs = ["ui.c", "login.c", "desktop.c", "pinguinos.c"]
+    srcs = ["ui.c", "login.c", "desktop.c", "pinguinos.c", "app.c"]
     result = []
     for s in srcs:
         src = os.path.join(OS_SRC, s)

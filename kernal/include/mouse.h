@@ -18,9 +18,13 @@
 
 /* ── Mouse event ─────────────────────────────────────────────────── */
 typedef struct mouse_event {
-    int16_t  dx;        /* Relative X movement (-256..+255) */
-    int16_t  dy;        /* Relative Y movement (-256..+255, Y-up) */
+    int16_t  dx;        /* Relative X movement (-256..+255)  */
+    int16_t  dy;        /* Relative Y movement (-256..+255)  */
+    int32_t  abs_x;     /* Absolute X after clamping         */
+    int32_t  abs_y;     /* Absolute Y after clamping         */
     uint8_t  buttons;   /* MOUSE_BTN_* bitmask               */
+    uint8_t  clicked;   /* Buttons newly pressed this event  */
+    uint8_t  released;  /* Buttons newly released this event */
 } mouse_event_t;
 
 /* ── Public API ──────────────────────────────────────────────────── */
@@ -46,5 +50,8 @@ uint8_t mouse_get_buttons(void);
 
 /** Set the virtual screen bounds used for absolute position clamping. */
 void mouse_set_bounds(int32_t width, int32_t height);
+
+/** Set absolute mouse position (used by VMMouse/USB-tablet drivers). */
+void mouse_set_abs_position(int32_t x, int32_t y, uint8_t buttons);
 
 #endif /* _MOUSE_H */

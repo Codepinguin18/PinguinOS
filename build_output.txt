@@ -1,0 +1,22 @@
+i686-linux-gnu-ld: warning: /mnt/c/Users/user01/OneDrive/Dokumente/GitHub/PinguinOS/build/kernal/cpu/isr.o: missing .note.GNU-stack section implies executable stack
+i686-linux-gnu-ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+
+[96mÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ[0m
+[96m  [1mPinguinOS Build  ÔÇô  Build[0m
+[96mÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ[0m
+
+[96mÔöîÔöÇ[0m [1mIcons generieren[0m
+  [93m![0m  [93mPillow nicht installiert ÔÇô Fallback-Icons aktiv  (pip install Pillow)[0m
+  [92mÔ£ô[0m  icons.h  (9 Icons)
+
+[96mÔöîÔöÇ[0m [1mKernel kompilieren[0m
+  [96mÔÇóÔÇó[0m [97mKeine Kernel-├änderungen ÔÇô ├╝bersprungen[0m
+
+[96mÔöîÔöÇ[0m [1mOS kompilieren[0m
+  [96mÔÇóÔÇó[0m [97mKeine OS-├änderungen ÔÇô ├╝bersprungen[0m
+
+[96mÔöîÔöÇ[0m [1mLinken ÔåÆ kernel.elf[0m
+  [96mLD[0m    build/kernel.elf  (64 Objekte)
+
+  [92m[1mÔ£ô  Build erfolgreich  (1.2s)[0m
+

@@ -61,7 +61,8 @@
 #include "include/vfs.h"
 #include "include/process.h"
 #include "include/keyboard.h"
-#include "include/mouse.h"
+# include "include/mouse.h"
+#include "include/vmmouse.h"
 #include "include/rtc.h"
 #include "include/acpi.h"
 #include "include/debug_shell.h"
@@ -91,6 +92,8 @@
 #include "include/msgqueue.h"
 /* PinguinOS Desktop-Umgebung */
 #include "../os/include/pinguinos.h"
+/* PE/EXE-Loader */
+#include "include/pe.h"
 
 /* ── Kernel-Version ──────────────────────────────────────────────── */
 #define KERNEL_VERSION  "2.3"
@@ -358,6 +361,10 @@ void cmain(uint32_t magic, multiboot_info_t *mbi)
     vfs_mount("/mnt/disk", "ide0p0", "fat32",   0);
     vga_printf("  [*] %-22s OK\n", "VFS/Dateisysteme");
 
+    /* ── Schritt 16b: PE/EXE-Loader ──────────────────────────────── */
+    pe_init();
+    vga_printf("  [*] %-22s OK  (i386 PE32)\n", "PE/EXE-Loader");
+
     /* ── Schritt 17: Initrd entladen ─────────────────────────────── */
     if (mbi->flags & (1 << 3) && mbi->mods_count > 0) {
         initrd_init(mbi->mods_addr);
@@ -388,6 +395,10 @@ void cmain(uint32_t magic, multiboot_info_t *mbi)
     /* ── Schritt 22: Tastatur + Maus ─────────────────────────────── */
     KINIT("Tastatur",  kbd_init());
     KINIT("Maus",      mouse_init());
+    /* VMMouse als absolute Erweiterung versuchen */
+    if (vmmouse_init()) {
+        KINFO("VMMouse: Absolute Maus aktiv\n");
+    }
 
     /* ── Schritt 23: RTC ─────────────────────────────────────────── */
     KINIT("RTC (Echtzeituhr)", rtc_init());

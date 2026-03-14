@@ -64,7 +64,41 @@ typedef struct fadt {
     uint32_t      pm1b_event_blk;
     uint32_t      pm1a_control_blk;
     uint32_t      pm1b_control_blk;
+    uint32_t      pm2_control_blk;
+    uint32_t      pm_timer_blk;
+    uint32_t      gpe0_blk;
+    uint32_t      gpe1_blk;
+    uint8_t       pm1_event_len;
+    uint8_t       pm1_control_len;
+    uint8_t       pm2_control_len;
+    uint8_t       pm_timer_len;
+    uint8_t       gpe0_len;
+    uint8_t       gpe1_len;
+    uint8_t       gpe1_base;
+    uint8_t       cstate_control;
+    uint16_t      worst_c2_latency;
+    uint16_t      worst_c3_latency;
+    uint16_t      flush_size;
+    uint16_t      flush_stride;
+    uint8_t       duty_offset;
+    uint8_t       duty_width;
+    uint8_t       day_alarm;
+    uint8_t       month_alarm;
+    uint8_t       century;
+    uint16_t      boot_architecture_flags;
+    uint8_t       reserved2;
+    uint32_t      flags;
+    /* ACPI 2.0+ fields */
+    uint8_t       reset_reg_addr_space;
+    uint8_t       reset_reg_bit_width;
+    uint8_t       reset_reg_bit_offset;
+    uint8_t       reset_reg_access_size;
+    uint64_t      reset_reg_address;
+    uint8_t       reset_value;
+    uint8_t       reserved3[3];
 } PACKED fadt_t;
+
+#define ACPI_FADT_RESET_REG_SUP (1 << 10)
 
 /* ── ACPI-Systemzustand ──────────────────────────────────────────── */
 typedef struct acpi_state {
@@ -77,6 +111,10 @@ typedef struct acpi_state {
     uint16_t  pm1b_control;   /* 0 wenn nicht vorhanden               */
     uint16_t  slp_typa;       /* S5 Sleep-Type-A-Wert                 */
     uint16_t  slp_typb;
+    /* Reset Register */
+    uint64_t  reset_reg_addr;
+    uint8_t   reset_value;
+    bool      reset_supported;
 } acpi_state_t;
 
 /* ── Öffentliche API ─────────────────────────────────────────────── */

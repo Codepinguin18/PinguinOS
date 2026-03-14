@@ -73,6 +73,13 @@ static void parse_fadt(void)
     acpi_state.pm1a_control = (uint16_t)fadt->pm1a_control_blk;
     acpi_state.pm1b_control = (uint16_t)fadt->pm1b_control_blk;
 
+    /* Reset Register support (ACPI 2.0+) */
+    if (fadt->header.revision >= 2 && (fadt->flags & ACPI_FADT_RESET_REG_SUP)) {
+        acpi_state.reset_reg_addr  = fadt->reset_reg_address;
+        acpi_state.reset_value     = fadt->reset_value;
+        acpi_state.reset_supported = true;
+    }
+
     /* S5-Schlaftyp aus dem DSDT lesen (vereinfacht: Standardwert) */
     acpi_state.slp_typa = 5 << 10;   /* SLP_TYP für S5 */
     acpi_state.slp_typb = 5 << 10;
@@ -165,18 +172,36 @@ void acpi_shutdown(void)
 /* ── Reboot ──────────────────────────────────────────────────────── */
 void acpi_reboot(void)
 {
-    serial_puts("[ACPI] Reboot\n");
+    serial_puts("[ACPI] Rebooting...\n");
 
-    /* Methode 1: Keyboard-Controller (universell) */
-    while (inb(PS2_STATUS_PORT) & 0x02);
-    outb(PS2_CMD_PORT, 0xFE);   /* Pulse Reset-Leitung */
-    io_wait();
+    /* Methode 0: ACPI Reset Register (ACPI 2.0+) */
+    if (acpi_state.reset_supported && acpi_state.reset_reg_addr) {
+        serial_puts("[ACPI] Trying ACPI Reset...\n");
+        if (acpi_state.reset_reg_addr < 0x10000) {
+            outb((uint16_t)acpi_state.reset_reg_addr, acpi_state.reset_value);
+        }
+        /* Falls Memory Mapped, hier mmio_write_8 o.ä. - in PinguinOS meist I/O */
+        io_wait();
+    }
+
+    /* Methode 1: Keyboard-Controller (universell, aber mit Timeout) */
+    serial_puts("[ACPI] Trying PS/2 Reset...\n");
+    uint32_t timeout = 100000;
+    while (timeout-- && (inb(PS2_STATUS_PORT) & 0x02)) pause();
+    
+    if (timeout > 0) {
+        outb(PS2_CMD_PORT, 0xFE);   /* Pulse Reset-Leitung */
+        io_wait();
+    }
 
     /* Methode 2: Triple Fault via ungültigen IDT-Load */
+    serial_puts("[ACPI] Trying Triple Fault...\n");
     typedef struct { uint16_t limit; uint32_t base; } PACKED idtr_t;
     idtr_t bad = { 0, 0 };
-    __asm__ volatile ("lidt (%0); int $3" :: "r"(&bad));
+    __asm__ volatile ("lidt (%0)" :: "r"(&bad));
+    __asm__ volatile ("int $3");
 
+    /* Letzte Instanz: Unendliche Schleife */
     for (;;) hlt();
 }
 

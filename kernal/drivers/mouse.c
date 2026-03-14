@@ -18,6 +18,7 @@
 #include "../include/cpu.h"
 #include "../include/serial.h"
 #include "../include/klib.h"
+#include "../include/vmmouse.h"
 
 /* ── I/O ports ───────────────────────────────────────────────────── */
 #define PS2_DATA    0x60
@@ -87,10 +88,17 @@ static void mouse_irq_handler(cpu_regs_t *regs)
 {
     (void)regs;
 
-    /* Nur lesen wenn Daten vorhanden – KEIN Bit-5-Check!
-     * Bit 5 (Mouse-Data-Flag) ist in manchen Emulatoren nicht gesetzt.
-     * Da wir auf IRQ12 registriert sind, kommen hier nur Maus-Daten. */
+    /* Nur lesen wenn Daten vorhanden – KEIN Bit-5-Check! */
     if (!(inb(PS2_STATUS) & PS2_STATUS_OUTPUT_FULL)) return;
+
+    /* Falls VMMouse aktiv ist, versuchen wir absolute Koordinaten zu lesen.
+       vmmouse_poll() liefert true, wenn ein Paket verarbeitet wurde. */
+    if (vmmouse_poll()) {
+        /* Paket wurde als absolutes Event verarbeitet, 
+           wir leeren aber das PS/2 Byte damit IRQ gelöscht wird. */
+        (void)inb(PS2_DATA);
+        return;
+    }
 
     uint8_t byte = inb(PS2_DATA);
     pkt[pkt_idx++] = byte;
@@ -123,9 +131,13 @@ static void mouse_irq_handler(cpu_regs_t *regs)
     /* Event in Queue einreihen */
     uint32_t next = (q_head + 1) % MOUSE_QUEUE_SIZE;
     if (next != q_tail) {
-        evt_queue[q_head].dx      = dx;
-        evt_queue[q_head].dy      = dy;
-        evt_queue[q_head].buttons = buttons;
+        evt_queue[q_head].dx       = dx;
+        evt_queue[q_head].dy       = dy;
+        evt_queue[q_head].abs_x    = mouse_x;
+        evt_queue[q_head].abs_y    = mouse_y;
+        evt_queue[q_head].buttons  = buttons;
+        evt_queue[q_head].clicked  = buttons & ~prev_buttons;
+        evt_queue[q_head].released = prev_buttons & ~buttons;
         q_head = next;
     }
 
@@ -208,4 +220,34 @@ void mouse_set_bounds(int32_t width, int32_t height)
 {
     screen_w = (width  > 0) ? width  : 1;
     screen_h = (height > 0) ? height : 1;
+}
+
+void mouse_set_abs_position(int32_t x, int32_t y, uint8_t buttons)
+{
+    /* VMMouse liefert meist 0..0xFFFF, wir skalieren auf screen_w/h */
+    mouse_x = (x * screen_w) / 65535;
+    mouse_y = (y * screen_h) / 65535;
+
+    /* Klicks loggen (Flankenerkennung) */
+    uint8_t pressed  = buttons & ~prev_buttons;
+    uint8_t released = prev_buttons & ~buttons;
+    if (pressed & MOUSE_BTN_LEFT)   serial_puts("[Maus] Abs-Links-Klick\n");
+    if (pressed & MOUSE_BTN_RIGHT)  serial_puts("[Maus] Abs-Rechts-Klick\n");
+    if (pressed & MOUSE_BTN_MIDDLE) serial_puts("[Maus] Abs-Mitte-Klick\n");
+
+    /* Event in Queue (dx=0, dy=0 da wir absolute Werte setzen) */
+    uint32_t next = (q_head + 1) % MOUSE_QUEUE_SIZE;
+    if (next != q_tail) {
+        evt_queue[q_head].dx       = 0;
+        evt_queue[q_head].dy       = 0;
+        evt_queue[q_head].abs_x    = mouse_x;
+        evt_queue[q_head].abs_y    = mouse_y;
+        evt_queue[q_head].buttons  = buttons;
+        evt_queue[q_head].clicked  = pressed;
+        evt_queue[q_head].released = released;
+        q_head = next;
+    }
+
+    mouse_buttons = buttons;
+    prev_buttons  = buttons;
 }
